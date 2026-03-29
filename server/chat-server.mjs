@@ -1,6 +1,13 @@
-// In-memory registration and user storage
-let registrationApplications = [];
-let users = [
+import { promises as fs } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { WebSocketServer } from "ws";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const stateFilePath = path.join(__dirname, "chat-state.json");
+
+const defaultUsers = [
   {
     id: 900002,
     name: "Demo Kullanici",
@@ -35,7 +42,32 @@ let users = [
     isActive: true,
   },
 ];
-import { WebSocketServer } from "ws";
+
+let registrationApplications = [];
+let users = [...defaultUsers];
+
+const saveState = async () => {
+  const state = {
+    registrationApplications,
+    users,
+  };
+  await fs.writeFile(stateFilePath, JSON.stringify(state, null, 2), "utf-8");
+};
+
+const loadState = async () => {
+  try {
+    const raw = await fs.readFile(stateFilePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    registrationApplications = Array.isArray(parsed.registrationApplications) ? parsed.registrationApplications : [];
+    users = Array.isArray(parsed.users) && parsed.users.length > 0 ? parsed.users : [...defaultUsers];
+  } catch {
+    registrationApplications = [];
+    users = [...defaultUsers];
+    await saveState();
+  }
+};
+
+await loadState();
 
 const PORT = Number(process.env.CHAT_WS_PORT ?? 8787);
 
@@ -113,7 +145,7 @@ const broadcastListingsSnapshot = () => {
 wss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "snapshot", messages, standardListings, arbitrageListings }));
 
-  socket.on("message", (rawData) => {
+  socket.on("message", async (rawData) => {
     try {
       const message = JSON.parse(rawData.toString());
 
@@ -168,6 +200,7 @@ wss.on("connection", (socket) => {
         };
 
         registrationApplications.push(application);
+        await saveState();
         socket.send(JSON.stringify({ type: "register:success" }));
         broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
         return;
@@ -207,6 +240,7 @@ wss.on("connection", (socket) => {
         };
 
         users.push(newUser);
+        await saveState();
         broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
         return;
       }
@@ -216,6 +250,7 @@ wss.on("connection", (socket) => {
 
         const applicationId = Number(message.applicationId);
         registrationApplications = registrationApplications.filter((a) => a.id !== applicationId);
+        await saveState();
         broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
         return;
       }
@@ -229,6 +264,7 @@ wss.on("connection", (socket) => {
           if (u.id !== userId || u.role === "admin") return u;
           return { ...u, isActive };
         });
+        await saveState();
         broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
         return;
       }
