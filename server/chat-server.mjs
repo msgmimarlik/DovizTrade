@@ -34,6 +34,17 @@ let users = [
     role: "user",
     isActive: true,
   },
+  {
+    id: 900004,
+    name: "Murat Secmen",
+    officeName: "DovizTrade Yonetim",
+    username: "murat.admin",
+    email: "muratsecmenn@gmail.com",
+    password: "Murat-17",
+    location: "Istanbul / Merkez",
+    role: "admin",
+    isActive: true,
+  },
 ];
 import { WebSocketServer } from "ws";
 
