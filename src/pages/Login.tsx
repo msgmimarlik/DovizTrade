@@ -245,11 +245,7 @@ const Login = () => {
             {isLogin ? "Hesabınıza giriş yapın" : "Yeni bir hesap oluşturun"}
           </p>
 
-          {isLogin && (
-            <div className="mb-4 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-              Yonetici: admin@dovizcim.com / Admin12345 | Kullanici: demo@dovizcim.com / Demo12345
-            </div>
-          )}
+          {/* Demo bilgi mesajı kaldırıldı */}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
