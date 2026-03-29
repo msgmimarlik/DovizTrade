@@ -64,7 +64,8 @@ const GeneralChat = () => {
   }, []);
 
   useEffect(() => {
-    const wsUrl = import.meta.env.VITE_CHAT_WS_URL || "ws://localhost:8787";
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const wsUrl = import.meta.env.VITE_CHAT_WS_URL || `${wsProtocol}://${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
