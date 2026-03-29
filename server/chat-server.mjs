@@ -117,6 +117,14 @@ wss.on("connection", (socket) => {
     try {
       const message = JSON.parse(rawData.toString());
 
+      const sendAdminData = () => {
+        socket.send(JSON.stringify({
+          type: "admin:data",
+          pendingRegistrations: registrationApplications,
+          users,
+        }));
+      };
+
       // Kullanıcı login
       if (message.type === "login") {
         const user = users.find(u => u.email.toLowerCase() === String(message.email).toLowerCase() && u.password === message.password);
@@ -127,6 +135,101 @@ wss.on("connection", (socket) => {
         } else {
           socket.send(JSON.stringify({ type: "login:success", user }));
         }
+        return;
+      }
+
+      if (message.type === "register") {
+        const email = String(message.email ?? "").trim().toLowerCase();
+        if (!email) {
+          socket.send(JSON.stringify({ type: "register:error", error: "E-posta gerekli." }));
+          return;
+        }
+
+        const alreadyExists = users.some((u) => u.email.toLowerCase() === email);
+        const alreadyPending = registrationApplications.some((u) => u.email.toLowerCase() === email);
+        if (alreadyExists || alreadyPending) {
+          socket.send(JSON.stringify({ type: "register:error", error: "Bu e-posta ile kayıtlı veya bekleyen bir başvuru var." }));
+          return;
+        }
+
+        const application = {
+          id: Number(message.id ?? Date.now()),
+          officeName: String(message.officeName ?? ""),
+          name: String(message.name ?? ""),
+          username: String(message.username ?? "").toLowerCase(),
+          email,
+          phone: String(message.phone ?? ""),
+          gsm: String(message.gsm ?? ""),
+          city: String(message.city ?? ""),
+          district: String(message.district ?? ""),
+          address: String(message.address ?? ""),
+          password: String(message.password ?? ""),
+          createdAt: new Date().toISOString(),
+        };
+
+        registrationApplications.push(application);
+        socket.send(JSON.stringify({ type: "register:success" }));
+        broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
+        return;
+      }
+
+      if (message.type === "admin:approvals:get") {
+        if (message.role !== "admin") return;
+        sendAdminData();
+        return;
+      }
+
+      if (message.type === "admin:approve") {
+        if (message.role !== "admin") return;
+
+        const applicationId = Number(message.applicationId);
+        const index = registrationApplications.findIndex((a) => a.id === applicationId);
+        if (index === -1) return;
+
+        const application = registrationApplications[index];
+        registrationApplications.splice(index, 1);
+
+        const newUser = {
+          id: application.id,
+          name: application.name,
+          officeName: application.officeName,
+          username: application.username,
+          email: application.email,
+          password: application.password,
+          phone: application.phone,
+          gsm: application.gsm,
+          city: application.city,
+          district: application.district,
+          address: application.address,
+          location: `${application.city} / ${application.district}`,
+          role: "user",
+          isActive: true,
+        };
+
+        users.push(newUser);
+        broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
+        return;
+      }
+
+      if (message.type === "admin:reject") {
+        if (message.role !== "admin") return;
+
+        const applicationId = Number(message.applicationId);
+        registrationApplications = registrationApplications.filter((a) => a.id !== applicationId);
+        broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
+        return;
+      }
+
+      if (message.type === "admin:user:set-active") {
+        if (message.role !== "admin") return;
+
+        const userId = Number(message.userId);
+        const isActive = Boolean(message.isActive);
+        users = users.map((u) => {
+          if (u.id !== userId || u.role === "admin") return u;
+          return { ...u, isActive };
+        });
+        broadcast({ type: "admin:data", pendingRegistrations: registrationApplications, users });
         return;
       }
 

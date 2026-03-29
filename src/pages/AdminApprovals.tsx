@@ -1,6 +1,6 @@
 import { ArrowLeft, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -40,6 +40,8 @@ const AdminApprovals = () => {
   const navigate = useNavigate();
   const [pending, setPending] = useState<PendingRegistration[]>([]);
   const [users, setUsers] = useState<StoredUser[]>([]);
+  const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     const rawCurrentUser = localStorage.getItem("currentUser");
@@ -50,59 +52,77 @@ const AdminApprovals = () => {
     }
 
     try {
-      const currentUser = JSON.parse(rawCurrentUser) as StoredUser;
-      if (currentUser.role !== "admin") {
+      const parsedUser = JSON.parse(rawCurrentUser) as StoredUser;
+      if (parsedUser.role !== "admin") {
         toast.error("Bu sayfaya sadece yonetici erisebilir.");
         navigate("/");
         return;
       }
+      setCurrentUser(parsedUser);
     } catch {
       toast.error("Oturum bilgisi okunamadi.");
       navigate("/login");
       return;
     }
-
-    const rawPending = localStorage.getItem("pendingRegistrations");
-    const rawUsers = localStorage.getItem("users");
-    setPending(rawPending ? JSON.parse(rawPending) : []);
-    setUsers(rawUsers ? JSON.parse(rawUsers) : []);
   }, [navigate]);
 
-  const approveApplication = (application: PendingRegistration) => {
-    const rawUsers = localStorage.getItem("users");
-    const users: StoredUser[] = rawUsers ? JSON.parse(rawUsers) : [];
+  useEffect(() => {
+    if (!currentUser) return;
 
-    const newUser: StoredUser = {
-      id: application.id,
-      name: application.name,
-      officeName: application.officeName,
-      username: application.username,
-      email: application.email,
-      password: application.password,
-      phone: application.phone,
-      gsm: application.gsm,
-      city: application.city,
-      district: application.district,
-      address: application.address,
-      location: `${application.city} / ${application.district}`,
-      role: "user",
-      isActive: true,
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const configuredWsUrl = import.meta.env.VITE_CHAT_WS_URL;
+    const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
+    const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+    const wsUrl = configuredWsUrl && (!isLocalWsUrl || isLocalHost)
+      ? configuredWsUrl
+      : `${wsProtocol}://${window.location.host}/ws`;
+
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "admin:approvals:get", role: currentUser.role }));
     };
 
-    const updatedUsers = [...users, newUser];
-    const updatedPending = pending.filter((p) => p.id !== application.id);
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "admin:data") {
+          setPending(payload.pendingRegistrations ?? []);
+          setUsers(payload.users ?? []);
+        }
+      } catch {
+        // Ignore malformed messages.
+      }
+    };
 
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
-    localStorage.setItem("pendingRegistrations", JSON.stringify(updatedPending));
-    setUsers(updatedUsers);
-    setPending(updatedPending);
+    ws.onerror = () => {
+      toast.error("Yonetici verileri alinarken baglanti hatasi olustu.");
+    };
+
+    return () => {
+      wsRef.current = null;
+      ws.close();
+    };
+  }, [currentUser]);
+
+  const approveApplication = (application: PendingRegistration) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      toast.error("Sunucuya baglanilamadi.");
+      return;
+    }
+    ws.send(JSON.stringify({ type: "admin:approve", role: currentUser?.role, applicationId: application.id }));
     toast.success("Basvuru onaylandi ve kullanici aktif edildi.");
   };
 
   const rejectApplication = (applicationId: number) => {
-    const updatedPending = pending.filter((p) => p.id !== applicationId);
-    localStorage.setItem("pendingRegistrations", JSON.stringify(updatedPending));
-    setPending(updatedPending);
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      toast.error("Sunucuya baglanilamadi.");
+      return;
+    }
+    ws.send(JSON.stringify({ type: "admin:reject", role: currentUser?.role, applicationId }));
     toast.success("Basvuru reddedildi.");
   };
 
@@ -112,13 +132,18 @@ const AdminApprovals = () => {
       return;
     }
 
-    const updatedUsers = users.map((u) => {
-      if (u.id !== userId) return u;
-      return { ...u, isActive: !u.isActive };
-    });
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      toast.error("Sunucuya baglanilamadi.");
+      return;
+    }
 
-    localStorage.setItem("users", JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
+    ws.send(JSON.stringify({
+      type: "admin:user:set-active",
+      role: currentUser?.role,
+      userId,
+      isActive: !targetUser.isActive,
+    }));
     toast.success(targetUser.isActive ? "Kullanici engellendi." : "Kullanici engeli kaldirildi.");
   };
 

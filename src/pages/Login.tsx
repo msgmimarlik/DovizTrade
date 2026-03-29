@@ -40,35 +40,6 @@ type PendingRegistration = {
   createdAt: string;
 };
 
-const DEMO_ADMIN: StoredUser = {
-  id: 900001,
-  name: "Bekir Admin",
-  officeName: "Dovizcim Yonetim",
-  username: "bekir.admin",
-  email: "admin@dovizcim.com",
-  password: "Admin12345",
-  location: "Istanbul / Merkez",
-  role: "admin",
-  isActive: true,
-};
-
-const DEMO_ACTIVE_USER: StoredUser = {
-  id: 900002,
-  name: "Demo Kullanici",
-  officeName: "Demo Ofis",
-  username: "demo.kullanici",
-  email: "demo@dovizcim.com",
-  password: "Demo12345",
-  phone: "02120000000",
-  gsm: "05320000000",
-  city: "Istanbul",
-  district: "Kadikoy",
-  address: "Demo Adres",
-  location: "Istanbul / Kadikoy",
-  role: "user",
-  isActive: true,
-};
-
 const Login = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
@@ -126,6 +97,14 @@ const Login = () => {
           navigate("/");
         } else if (payload.type === "login:error") {
           toast.error(payload.error || "Giriş başarısız.");
+        } else if (payload.type === "register:success") {
+          toast.success("Kayit basvurunuz yonetici onayina gonderildi.");
+          setIsLogin(true);
+          setPassword("");
+          setPasswordRepeat("");
+          setCaptchaInput("");
+        } else if (payload.type === "register:error") {
+          toast.error(payload.error || "Kayit basarisiz.");
         }
       } catch {}
     };
@@ -142,9 +121,6 @@ const Login = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
-    const usersRaw = localStorage.getItem("users");
-    const users: StoredUser[] = usersRaw ? JSON.parse(usersRaw) : [];
 
     if (isLogin) {
       // WebSocket ile sunucuya login isteği gönder
@@ -197,17 +173,14 @@ const Login = () => {
       return;
     }
 
-    const pendingRaw = localStorage.getItem("pendingRegistrations");
-    const pendingRegistrations: PendingRegistration[] = pendingRaw ? JSON.parse(pendingRaw) : [];
-
-    const alreadyExists = users.some((u) => u.email.toLowerCase() === email.toLowerCase());
-    const alreadyPending = pendingRegistrations.some((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (alreadyExists || alreadyPending) {
-      toast.error("Bu e-posta ile kayıtlı veya bekleyen bir başvuru var.");
+    const ws = wsRef.current;
+    if (!ws) {
+      toast.error("Sunucuya bağlanılamadı.");
       return;
     }
 
-    const application: PendingRegistration = {
+    const registerPayload = JSON.stringify({
+      type: "register",
       id: Date.now(),
       officeName,
       name,
@@ -219,14 +192,22 @@ const Login = () => {
       district,
       address,
       password,
-      createdAt: new Date().toISOString(),
-    };
-    localStorage.setItem("pendingRegistrations", JSON.stringify([...pendingRegistrations, application]));
-    toast.success("Kayit basvurunuz yonetici onayina gonderildi.");
-    setIsLogin(true);
-    setPassword("");
-    setPasswordRepeat("");
-    setCaptchaInput("");
+    });
+
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(registerPayload);
+    } else {
+      ws.onopen = () => {
+        ws.send(registerPayload);
+      };
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(registerPayload);
+        } else {
+          toast.error("Sunucuya bağlanılamadı.");
+        }
+      }, 1000);
+    }
   };
 
   return (
