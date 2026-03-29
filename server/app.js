@@ -1,6 +1,7 @@
 import express from 'express';
 import mysql from 'mysql2';
 import bodyParser from 'body-parser';
+import bcrypt from 'bcrypt';
 
 const app = express();
 app.use(bodyParser.json());
@@ -12,9 +13,237 @@ const db = mysql.createConnection({
   database: 'doviztrader'
 });
 
+const dbp = db.promise();
+
+const query = async (sql, params = []) => {
+  const [rows] = await dbp.query(sql, params);
+  return rows;
+};
+
+const ensureUserColumns = async () => {
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120) NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS office_name VARCHAR(120) NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40) NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gsm VARCHAR(40) NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(80) NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS district VARCHAR(80) NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT NULL");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role ENUM('admin','user') NOT NULL DEFAULT 'user'");
+  await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE");
+};
+
+const ensureAdminUser = async () => {
+  const email = 'muratsecmenn@gmail.com';
+  const plainPassword = 'Murat-17';
+  const username = 'murat.admin';
+  const fullName = 'Murat Secmen';
+
+  const existing = await query('SELECT id, password_hash FROM users WHERE email = ? LIMIT 1', [email]);
+  const passwordHash = await bcrypt.hash(plainPassword, 10);
+
+  if (existing.length === 0) {
+    await query(
+      `INSERT INTO users (
+        username, email, password_hash, is_approved, role, is_active,
+        full_name, office_name, city, district, address
+      ) VALUES (?, ?, ?, TRUE, 'admin', TRUE, ?, ?, ?, ?, ?)`,
+      [username, email, passwordHash, fullName, 'DovizTrade Yonetim', 'Istanbul', 'Merkez', 'Istanbul / Merkez']
+    );
+    return;
+  }
+
+  await query(
+    `UPDATE users
+     SET role = 'admin', is_approved = TRUE, is_active = TRUE,
+         full_name = COALESCE(full_name, ?),
+         office_name = COALESCE(office_name, ?),
+         city = COALESCE(city, ?),
+         district = COALESCE(district, ?),
+         address = COALESCE(address, ?)
+     WHERE email = ?`,
+    [fullName, 'DovizTrade Yonetim', 'Istanbul', 'Merkez', 'Istanbul / Merkez', email]
+  );
+};
+
 db.connect((err) => {
   if (err) throw err;
   console.log('MySQL baglantisi basarili!');
+  ensureUserColumns()
+    .then(() => ensureAdminUser())
+    .then(() => console.log('Auth schema hazir.'))
+    .catch((schemaErr) => {
+      console.error('Auth schema hazirlama hatasi:', schemaErr.message);
+    });
+});
+
+app.post('/api/auth/register', async (req, res) => {
+  const {
+    officeName,
+    name,
+    username,
+    email,
+    phone,
+    gsm,
+    city,
+    district,
+    address,
+    password
+  } = req.body;
+
+  if (!username || !email || !password || !name) {
+    return res.status(400).json({ error: 'Eksik alanlar var.' });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    await query(
+      `INSERT INTO users (
+        username, email, password_hash, is_approved, role, is_active,
+        full_name, office_name, phone, gsm, city, district, address
+      ) VALUES (?, ?, ?, FALSE, 'user', TRUE, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        String(username).toLowerCase(),
+        String(email).toLowerCase(),
+        passwordHash,
+        name,
+        officeName || null,
+        phone || null,
+        gsm || null,
+        city || null,
+        district || null,
+        address || null
+      ]
+    );
+    res.status(201).json({ message: 'Kayit basvurunuz yonetici onayina gonderildi.' });
+  } catch (err) {
+    if (err && err.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ error: 'Bu e-posta veya kullanici adi zaten kayitli.' });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: 'E-posta ve sifre gerekli.' });
+  }
+
+  try {
+    const rows = await query('SELECT * FROM users WHERE email = ? LIMIT 1', [String(email).toLowerCase()]);
+    if (rows.length === 0) {
+      return res.status(401).json({ error: 'E-posta veya sifre hatali.' });
+    }
+
+    const user = rows[0];
+    if (!user.is_active) {
+      return res.status(403).json({ error: 'Hesabiniz engellenmis.' });
+    }
+    if (!user.is_approved) {
+      return res.status(403).json({ error: 'Hesabiniz henuz yonetici tarafindan onaylanmadi.' });
+    }
+
+    const stored = String(user.password_hash || '');
+    const isHash = stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$');
+    const validPassword = isHash ? await bcrypt.compare(password, stored) : password === stored;
+    if (!validPassword) {
+      return res.status(401).json({ error: 'E-posta veya sifre hatali.' });
+    }
+
+    if (!isHash) {
+      const upgradedHash = await bcrypt.hash(password, 10);
+      await query('UPDATE users SET password_hash = ? WHERE id = ?', [upgradedHash, user.id]);
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        name: user.full_name || user.username,
+        officeName: user.office_name,
+        username: user.username,
+        email: user.email,
+        phone: user.phone,
+        gsm: user.gsm,
+        city: user.city,
+        district: user.district,
+        address: user.address,
+        location: [user.city, user.district].filter(Boolean).join(' / ') || 'Belirtilmedi',
+        role: user.role,
+        isActive: Boolean(user.is_active),
+        isApproved: Boolean(user.is_approved)
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/pending-users', async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, username, email, full_name, office_name, phone, gsm, city, district, address, is_approved, is_active, role, created_at
+       FROM users
+       WHERE role = 'user' AND is_approved = FALSE
+       ORDER BY created_at ASC`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT id, username, email, full_name, office_name, phone, gsm, city, district, address, is_approved, is_active, role, created_at
+       FROM users
+       ORDER BY created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/users/:id/approve', async (req, res) => {
+  try {
+    const result = await query("UPDATE users SET is_approved = TRUE WHERE id = ? AND role = 'user'", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Kullanici bulunamadi.' });
+    }
+    res.json({ message: 'Kullanici onaylandi.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/users/:id/active', async (req, res) => {
+  const { is_active } = req.body;
+  if (typeof is_active !== 'boolean') {
+    return res.status(400).json({ error: 'is_active boolean olmali.' });
+  }
+
+  try {
+    const result = await query("UPDATE users SET is_active = ? WHERE id = ? AND role = 'user'", [is_active, req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Kullanici bulunamadi.' });
+    }
+    res.json({ message: is_active ? 'Kullanici aktif edildi.' : 'Kullanici engellendi.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/users/:id', async (req, res) => {
+  try {
+    const result = await query("DELETE FROM users WHERE id = ? AND role = 'user' AND is_approved = FALSE", [req.params.id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ error: 'Basvuru bulunamadi.' });
+    }
+    res.json({ message: 'Basvuru reddedildi.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/users', (req, res) => {
@@ -28,14 +257,14 @@ app.post('/api/users', (req, res) => {
 });
 
 app.get('/api/users', (req, res) => {
-  db.query('SELECT id, username, email, is_approved, created_at FROM users', (err, results) => {
+  db.query('SELECT id, username, email, full_name, office_name, city, district, role, is_active, is_approved, created_at FROM users', (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(results);
   });
 });
 
 app.get('/api/users/:id', (req, res) => {
-  db.query('SELECT id, username, email, is_approved, created_at FROM users WHERE id = ?', [req.params.id], (err, results) => {
+  db.query('SELECT id, username, email, full_name, office_name, phone, gsm, city, district, address, role, is_active, is_approved, created_at FROM users WHERE id = ?', [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     if (results.length === 0) return res.status(404).json({ error: 'Kullanici bulunamadi.' });
     res.json(results[0]);

@@ -5,7 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 type StoredUser = {
@@ -25,25 +25,9 @@ type StoredUser = {
   isActive?: boolean;
 };
 
-type PendingRegistration = {
-  id: number;
-  officeName: string;
-  name: string;
-  username: string;
-  email: string;
-  phone: string;
-  gsm: string;
-  city: string;
-  district: string;
-  address: string;
-  password: string;
-  createdAt: string;
-};
-
 const Login = () => {
   const navigate = useNavigate();
   const [isLogin, setIsLogin] = useState(true);
-  const wsRef = useRef<WebSocket | null>(null);
   const [officeName, setOfficeName] = useState("");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
@@ -77,72 +61,31 @@ const Login = () => {
   };
 
   useEffect(() => {
-    // WebSocket bağlantısı kur
-    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const configuredWsUrl = import.meta.env.VITE_CHAT_WS_URL;
-    const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
-    const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    const wsUrl = configuredWsUrl && (!isLocalWsUrl || isLocalHost)
-      ? configuredWsUrl
-      : `${wsProtocol}://${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
-
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "login:success") {
-          localStorage.setItem("currentUser", JSON.stringify(payload.user));
-          toast.success("Giriş başarılı.");
-          navigate("/");
-        } else if (payload.type === "login:error") {
-          toast.error(payload.error || "Giriş başarısız.");
-        } else if (payload.type === "register:success") {
-          toast.success("Kayit basvurunuz yonetici onayina gonderildi.");
-          setIsLogin(true);
-          setPassword("");
-          setPasswordRepeat("");
-          setCaptchaInput("");
-        } else if (payload.type === "register:error") {
-          toast.error(payload.error || "Kayit basarisiz.");
-        }
-      } catch {}
-    };
-
-    return () => {
-      wsRef.current = null;
-      ws.close();
-    };
-  }, [navigate]);
-
-  useEffect(() => {
     generateCaptcha();
   }, [isLogin]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (isLogin) {
-      // WebSocket ile sunucuya login isteği gönder
-      const ws = wsRef.current;
-      if (!ws) {
+      try {
+        const response = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+          toast.error(payload.error || "Giriş başarısız.");
+          return;
+        }
+
+        localStorage.setItem("currentUser", JSON.stringify(payload.user));
+        toast.success("Giriş başarılı.");
+        navigate("/");
+      } catch {
         toast.error("Sunucuya bağlanılamadı.");
-        return;
-      }
-      const loginPayload = JSON.stringify({ type: "login", email, password });
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(loginPayload);
-      } else {
-        ws.onopen = () => {
-          ws.send(loginPayload);
-        };
-        setTimeout(() => {
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(loginPayload);
-          } else {
-            toast.error("Sunucuya bağlanılamadı.");
-          }
-        }, 1000);
       }
       return;
     }
@@ -173,40 +116,37 @@ const Login = () => {
       return;
     }
 
-    const ws = wsRef.current;
-    if (!ws) {
+    try {
+      const response = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          officeName,
+          name,
+          username,
+          email,
+          phone,
+          gsm,
+          city,
+          district,
+          address,
+          password,
+        }),
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        toast.error(payload.error || "Kayit basarisiz.");
+        return;
+      }
+
+      toast.success(payload.message || "Kayit basvurunuz yonetici onayina gonderildi.");
+      setIsLogin(true);
+      setPassword("");
+      setPasswordRepeat("");
+      setCaptchaInput("");
+    } catch {
       toast.error("Sunucuya bağlanılamadı.");
-      return;
-    }
-
-    const registerPayload = JSON.stringify({
-      type: "register",
-      id: Date.now(),
-      officeName,
-      name,
-      username,
-      email,
-      phone,
-      gsm,
-      city,
-      district,
-      address,
-      password,
-    });
-
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(registerPayload);
-    } else {
-      ws.onopen = () => {
-        ws.send(registerPayload);
-      };
-      setTimeout(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(registerPayload);
-        } else {
-          toast.error("Sunucuya bağlanılamadı.");
-        }
-      }, 1000);
     }
   };
 
