@@ -98,9 +98,9 @@ app.post('/api/auth/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
     await query(
       `INSERT INTO users (
-        username, email, password_hash, is_approved, role, is_active,
+        username, email, password_hash, is_approved,
         full_name, office_name, phone, gsm, city, district, address
-      ) VALUES (?, ?, ?, FALSE, 'user', TRUE, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, FALSE, ?, ?, ?, ?, ?, ?, ?)`,
       [
         String(username).toLowerCase(),
         String(email).toLowerCase(),
