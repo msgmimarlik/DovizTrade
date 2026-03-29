@@ -2,17 +2,6 @@
 let registrationApplications = [];
 let users = [
   {
-    id: 900001,
-    name: "Bekir Admin",
-    officeName: "Dovizcim Yonetim",
-    username: "bekir.admin",
-    email: "admin@dovizcim.com",
-    password: "Admin12345",
-    location: "Istanbul / Merkez",
-    role: "admin",
-    isActive: true,
-  },
-  {
     id: 900002,
     name: "Demo Kullanici",
     officeName: "Demo Ofis",
