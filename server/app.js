@@ -1,57 +1,105 @@
-// Kullanıcı onaylama (admin) endpointi
-app.patch('/api/users/:id/approve', (req, res) => {
-  const userId = req.params.id;
-  db.query('UPDATE users SET is_approved = TRUE WHERE id = ?', [userId], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
-    res.json({ message: 'Kullanıcı onaylandı.' });
-  });
+import express from 'express';
+import mysql from 'mysql2';
+import bodyParser from 'body-parser';
+
+const app = express();
+app.use(bodyParser.json());
+
+const db = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: 'secmen-17Murat',
+  database: 'doviztrader'
 });
-// Döviz ekleme endpointi
-app.post('/api/currencies', (req, res) => {
-  const { code, name } = req.body;
-  if (!code || !name) {
-    return res.status(400).json({ error: 'Eksik alanlar var.' });
-  }
-  const sql = 'INSERT INTO currencies (code, name) VALUES (?, ?)';
-  db.query(sql, [code, name], (err, result) => {
+
+db.connect((err) => {
+  if (err) throw err;
+  console.log('MySQL baglantisi basarili!');
+});
+
+app.post('/api/users', (req, res) => {
+  const { username, email, password_hash } = req.body;
+  if (!username || !email || !password_hash) return res.status(400).json({ error: 'Eksik alanlar var.' });
+  const sql = 'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)';
+  db.query(sql, [username, email, password_hash], (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: result.insertId, code, name });
+    res.status(201).json({ id: result.insertId, username, email });
   });
 });
 
-// Tüm dövizleri listeleme endpointi
-app.get('/api/currencies', (req, res) => {
-  const sql = 'SELECT * FROM currencies';
-  db.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
-  });
-});
-// Tüm kullanıcıları listeleme endpointi
 app.get('/api/users', (req, res) => {
-  const sql = 'SELECT id, username, email, created_at FROM users';
-  db.query(sql, (err, results) => {
+  db.query('SELECT id, username, email, is_approved, created_at FROM users', (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(results);
   });
 });
 
-// Tekil kullanıcı görüntüleme endpointi
 app.get('/api/users/:id', (req, res) => {
-  const sql = 'SELECT id, username, email, created_at FROM users WHERE id = ?';
-  db.query(sql, [req.params.id], (err, results) => {
+  db.query('SELECT id, username, email, is_approved, created_at FROM users WHERE id = ?', [req.params.id], (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (results.length === 0) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
+    if (results.length === 0) return res.status(404).json({ error: 'Kullanici bulunamadi.' });
     res.json(results[0]);
   });
 });
-// Mesaj gönderme endpointi
+
+app.patch('/api/users/:id/approve', (req, res) => {
+  db.query('UPDATE users SET is_approved = TRUE WHERE id = ?', [req.params.id], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (result.affectedRows === 0) return res.status(404).json({ error: 'Kullanici bulunamadi.' });
+    res.json({ message: 'Kullanici onaylandi.' });
+  });
+});
+
+app.post('/api/listings', (req, res) => {
+  const { user_id, currency_id, amount, price, type } = req.body;
+  if (!user_id || !currency_id || !amount || !price || !type) return res.status(400).json({ error: 'Eksik alanlar var.' });
+  db.query('SELECT is_approved FROM users WHERE id = ?', [user_id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ error: 'Kullanici bulunamadi.' });
+    if (!results[0].is_approved) return res.status(403).json({ error: 'Kullanici hesabi onaylanmamis.' });
+    const sql = 'INSERT INTO listings (user_id, currency_id, amount, price, type) VALUES (?, ?, ?, ?, ?)';
+    db.query(sql, [user_id, currency_id, amount, price, type], (err2, result) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.status(201).json({ id: result.insertId, user_id, currency_id, amount, price, type });
+    });
+  });
+});
+
+app.get('/api/listings', (req, res) => {
+  db.query('SELECT * FROM listings', (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(results);
+  });
+});
+
+app.get('/api/listings/:id', (req, res) => {
+  db.query('SELECT * FROM listings WHERE id = ?', [req.params.id], (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (results.length === 0) return res.status(404).json({ error: 'Ilan bulunamadi.' });
+    res.json(results[0]);
+  });
+});
+
+app.post('/api/transactions', (req, res) => {
+  const { buyer_id, seller_id, listing_id, amount, price } = req.body;
+  if (!buyer_id || !seller_id || !listing_id || !amount || !price) return res.status(400).json({ error: 'Eksik alanlar var.' });
+  const sql = 'INSERT INTO transactions (buyer_id, seller_id, listing_id, amount, price) VALUES (?, ?, ?, ?, ?)';
+  db.query(sql, [buyer_id, seller_id, listing_id, amount, price], (err, result) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.status(201).json({ id: result.insertId, buyer_id, seller_id, listing_id, amount, price });
+  });
+});
+
+app.get('/api/transactions', (req, res) => {
+  db.query('SELECT * FROM transactions', (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(results);
+  });
+});
+
 app.post('/api/messages', (req, res) => {
   const { sender_id, receiver_id, content } = req.body;
-  if (!sender_id || !receiver_id || !content) {
-    return res.status(400).json({ error: 'Eksik alanlar var.' });
-  }
+  if (!sender_id || !receiver_id || !content) return res.status(400).json({ error: 'Eksik alanlar var.' });
   const sql = 'INSERT INTO messages (sender_id, receiver_id, content) VALUES (?, ?, ?)';
   db.query(sql, [sender_id, receiver_id, content], (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
@@ -59,7 +107,6 @@ app.post('/api/messages', (req, res) => {
   });
 });
 
-// Kullanıcılar arası mesajları listeleme endpointi
 app.get('/api/messages', (req, res) => {
   const { sender_id, receiver_id } = req.query;
   let sql = 'SELECT * FROM messages';
@@ -79,101 +126,24 @@ app.get('/api/messages', (req, res) => {
     res.json(results);
   });
 });
-// İşlem ekleme endpointi
-app.post('/api/transactions', (req, res) => {
-  const { buyer_id, seller_id, listing_id, amount, price } = req.body;
-  if (!buyer_id || !seller_id || !listing_id || !amount || !price) {
-    return res.status(400).json({ error: 'Eksik alanlar var.' });
-  }
-  const sql = 'INSERT INTO transactions (buyer_id, seller_id, listing_id, amount, price) VALUES (?, ?, ?, ?, ?)';
-  db.query(sql, [buyer_id, seller_id, listing_id, amount, price], (err, result) => {
+
+app.post('/api/currencies', (req, res) => {
+  const { code, name } = req.body;
+  if (!code || !name) return res.status(400).json({ error: 'Eksik alanlar var.' });
+  db.query('INSERT INTO currencies (code, name) VALUES (?, ?)', [code, name], (err, result) => {
     if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: result.insertId, buyer_id, seller_id, listing_id, amount, price });
+    res.status(201).json({ id: result.insertId, code, name });
   });
 });
 
-// Tüm işlemleri listeleme endpointi
-app.get('/api/transactions', (req, res) => {
-  const sql = 'SELECT * FROM transactions';
-  db.query(sql, (err, results) => {
+app.get('/api/currencies', (req, res) => {
+  db.query('SELECT * FROM currencies', (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(results);
-  });
-});
-// Basit bir MySQL bağlantısı ve örnek kullanıcı ekleme endpointi
-const express = require('express');
-const mysql = require('mysql2');
-const bodyParser = require('body-parser');
-
-const app = express();
-app.use(bodyParser.json());
-
-const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root', // MySQL kullanıcı adını değiştirin
-  password: '', // MySQL şifresini girin
-  database: 'doviztrader' // Veritabanı adını girin
-});
-
-db.connect((err) => {
-  if (err) throw err;
-  console.log('MySQL bağlantısı başarılı!');
-});
-
-// Kullanıcı ekleme endpointi
-app.post('/api/users', (req, res) => {
-  const { username, email, password_hash } = req.body;
-  if (!username || !email || !password_hash) {
-    return res.status(400).json({ error: 'Eksik alanlar var.' });
-  }
-  const sql = 'INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)';
-  db.query(sql, [username, email, password_hash], (err, result) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.status(201).json({ id: result.insertId, username, email });
   });
 });
 
 const PORT = 3001;
 app.listen(PORT, () => {
-  console.log(`Server ${PORT} portunda çalışıyor.`);
-});
-
-
-// İlan ekleme endpointi (sadece onaylı kullanıcılar için)
-app.post('/api/listings', (req, res) => {
-  const { user_id, currency_id, amount, price, type } = req.body;
-  if (!user_id || !currency_id || !amount || !price || !type) {
-    return res.status(400).json({ error: 'Eksik alanlar var.' });
-  }
-  // Önce kullanıcının onaylı olup olmadığını kontrol et
-  db.query('SELECT is_approved FROM users WHERE id = ?', [user_id], (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (results.length === 0) return res.status(404).json({ error: 'Kullanıcı bulunamadı.' });
-    if (!results[0].is_approved) return res.status(403).json({ error: 'Kullanıcı hesabı onaylanmamış.' });
-    // Onaylıysa ilan ekle
-    const sql = 'INSERT INTO listings (user_id, currency_id, amount, price, type) VALUES (?, ?, ?, ?, ?)';
-    db.query(sql, [user_id, currency_id, amount, price, type], (err2, result) => {
-      if (err2) return res.status(500).json({ error: err2.message });
-      res.status(201).json({ id: result.insertId, user_id, currency_id, amount, price, type });
-    });
-  });
-});
-
-// Tüm ilanları listeleme endpointi
-app.get('/api/listings', (req, res) => {
-  const sql = 'SELECT * FROM listings';
-  db.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(results);
-  });
-});
-
-// Tekil ilan görüntüleme endpointi
-app.get('/api/listings/:id', (req, res) => {
-  const sql = 'SELECT * FROM listings WHERE id = ?';
-  db.query(sql, [req.params.id], (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (results.length === 0) return res.status(404).json({ error: 'İlan bulunamadı.' });
-    res.json(results[0]);
-  });
+  console.log('Server ' + PORT + ' portunda calisiyor.');
 });
