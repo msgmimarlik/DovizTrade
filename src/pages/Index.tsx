@@ -87,12 +87,20 @@ const Index = () => {
           const u = JSON.parse(rawUser);
           if (u?.id) {
             ws.send(JSON.stringify({ type: "user:online", userId: u.id }));
+            ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
           }
         }
       } catch {
         // ignore
       }
     };
+
+    const handleVisibility = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
 
     ws.onmessage = (event) => {
       try {
@@ -154,6 +162,7 @@ const Index = () => {
     };
 
     return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
       listingsWsRef.current = null;
       ws.close();
     };
@@ -320,7 +329,12 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
-                          <td className="px-2 py-1 border">{listing.userName}</td>
+                          <td className="px-2 py-1 border">
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : listing.ownerOnline ? "bg-yellow-400" : "bg-gray-400"}`} title={listing.ownerTabActive ? "Aktif" : listing.ownerOnline ? "Bağlı (arka planda)" : "Çevrimdışı"} />
+                              {listing.userName}
+                            </span>
+                          </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
@@ -364,7 +378,12 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
-                          <td className="px-2 py-1 border">{listing.userName}</td>
+                          <td className="px-2 py-1 border">
+                            <span className="flex items-center gap-1.5">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : listing.ownerOnline ? "bg-yellow-400" : "bg-gray-400"}`} title={listing.ownerTabActive ? "Aktif" : listing.ownerOnline ? "Bağlı (arka planda)" : "Çevrimdışı"} />
+                              {listing.userName}
+                            </span>
+                          </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
@@ -408,7 +427,12 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate}</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
-                        <td className="px-2 py-1 border">{listing.userName}</td>
+                        <td className="px-2 py-1 border">
+                          <span className="flex items-center gap-1.5">
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : listing.ownerOnline ? "bg-yellow-400" : "bg-gray-400"}`} title={listing.ownerTabActive ? "Aktif" : listing.ownerOnline ? "Bağlı (arka planda)" : "Çevrimdışı"} />
+                            {listing.userName}
+                          </span>
+                        </td>
                         <td className="px-2 py-1 border">{listing.location}</td>
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">

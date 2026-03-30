@@ -58,6 +58,8 @@ const wss = new WebSocketServer({ port: PORT });
 
 // Track which users are currently connected: Map<socket, userId>
 const connectedSockets = new Map();
+// Tracks users whose browser tab is currently visible/active
+const activeTabUserIds = new Set();
 
 const broadcast = (payload) => {
   const data = JSON.stringify(payload);
@@ -68,8 +70,21 @@ const broadcast = (payload) => {
   });
 };
 
+const annotateListings = (list) => {
+  const onlineIds = new Set(connectedSockets.values());
+  return list.map((l) => ({
+    ...l,
+    ownerOnline: l.ownerId ? onlineIds.has(l.ownerId) : false,
+    ownerTabActive: l.ownerId ? activeTabUserIds.has(l.ownerId) : false,
+  }));
+};
+
 const broadcastListingsSnapshot = () => {
-  broadcast({ type: "listings:snapshot", standardListings, arbitrageListings });
+  broadcast({
+    type: "listings:snapshot",
+    standardListings: annotateListings(standardListings),
+    arbitrageListings: annotateListings(arbitrageListings),
+  });
 };
 
 const broadcastOnlineUsers = () => {
@@ -92,7 +107,7 @@ const broadcastOnlineUsers = () => {
 };
 
 wss.on("connection", (socket) => {
-  socket.send(JSON.stringify({ type: "snapshot", messages, standardListings, arbitrageListings }));
+  socket.send(JSON.stringify({ type: "snapshot", messages, standardListings: annotateListings(standardListings), arbitrageListings: annotateListings(arbitrageListings) }));
 
   // Send current online users to the newly connected client
   const onlineIds = new Set(connectedSockets.values());
@@ -112,7 +127,9 @@ wss.on("connection", (socket) => {
     const userId = connectedSockets.get(socket);
     connectedSockets.delete(socket);
     if (userId !== undefined) {
+      activeTabUserIds.delete(userId);
       broadcastOnlineUsers();
+      broadcastListingsSnapshot();
     }
   });
 
@@ -149,6 +166,24 @@ wss.on("connection", (socket) => {
         if (userId && users.some((u) => u.id === userId && u.isActive)) {
           connectedSockets.set(socket, userId);
           broadcastOnlineUsers();
+        }
+        return;
+      }
+
+      if (message.type === "user:tab:active") {
+        const userId = connectedSockets.get(socket);
+        if (userId !== undefined) {
+          activeTabUserIds.add(userId);
+          broadcastListingsSnapshot();
+        }
+        return;
+      }
+
+      if (message.type === "user:tab:inactive") {
+        const userId = connectedSockets.get(socket);
+        if (userId !== undefined) {
+          activeTabUserIds.delete(userId);
+          broadcastListingsSnapshot();
         }
         return;
       }
@@ -286,7 +321,7 @@ wss.on("connection", (socket) => {
           arbitrageListings.push(listing);
         }
 
-        broadcast({ type: "listing:created", listing });
+        broadcast({ type: "listing:created", listing: annotateListings([listing])[0] });
         broadcastListingsSnapshot();
       }
 

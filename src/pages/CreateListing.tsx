@@ -98,6 +98,7 @@ const CreateListing = () => {
         const arbitrageListing = {
           kind: "arbitrage",
           id: Date.now(),
+          ownerId: currentUser.id,
           currency: `${currency}/${secondCurrency}`,
           currencyFlag: `${currencyFlags[currency] ?? ""}/${currencyFlags[secondCurrency] ?? ""}`,
           amount: amountValue,
@@ -114,6 +115,7 @@ const CreateListing = () => {
         const standardListing = {
           kind: "standard",
           id: Date.now(),
+          ownerId: currentUser.id,
           type: type === "sell" ? "sell" : "buy",
           currency,
           currencyFlag: currencyFlags[currency] ?? "",
