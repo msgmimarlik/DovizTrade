@@ -62,7 +62,7 @@ const Navbar = () => {
   return (
     <>
       <nav className="bg-card border-b border-border sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="w-full px-4 py-3 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2" onClick={(e) => { e.preventDefault(); navigate("/"); }}>
             <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
               <span className="text-primary-foreground font-display font-bold text-sm">DT</span>
