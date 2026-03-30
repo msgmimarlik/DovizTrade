@@ -53,6 +53,9 @@ const Navbar = () => {
   };
 
   const handleLogout = () => {
+    if (currentUser?.id) {
+      window.dispatchEvent(new CustomEvent("doviztrade:logout", { detail: { userId: currentUser.id } }));
+    }
     sessionStorage.removeItem("currentUser");
     localStorage.removeItem("currentUser");
     setCurrentUser(null);

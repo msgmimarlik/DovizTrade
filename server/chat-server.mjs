@@ -224,6 +224,30 @@ wss.on("connection", (socket) => {
         return;
       }
 
+      if (message.type === "user:logout") {
+        const userId = Number(message.userId);
+        if (!userId) return;
+
+        connectedSockets.delete(socket);
+        activeTabUserIds.delete(userId);
+
+        const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
+        if (!stillConnected) {
+          connectedUserProfiles.delete(userId);
+          const deletedIds = [
+            ...standardListings.filter((l) => l.ownerId === userId).map((l) => l.id),
+            ...arbitrageListings.filter((l) => l.ownerId === userId).map((l) => l.id),
+          ];
+          standardListings = standardListings.filter((l) => l.ownerId !== userId);
+          arbitrageListings = arbitrageListings.filter((l) => l.ownerId !== userId);
+          deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
+        }
+
+        broadcastOnlineUsers();
+        broadcastListingsSnapshot();
+        return;
+      }
+
       if (message.type === "register") {
         const email = String(message.email ?? "").trim().toLowerCase();
         if (!email) {

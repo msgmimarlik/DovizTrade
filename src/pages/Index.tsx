@@ -69,6 +69,23 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
+    const handleAppLogout = (event: Event) => {
+      const customEvent = event as CustomEvent<{ userId?: number }>;
+      const userId = customEvent.detail?.userId;
+      const ws = listingsWsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN && userId) {
+        ws.send(JSON.stringify({ type: "user:logout", userId }));
+      }
+      setCurrentUser(null);
+    };
+
+    window.addEventListener("doviztrade:logout", handleAppLogout as EventListener);
+    return () => {
+      window.removeEventListener("doviztrade:logout", handleAppLogout as EventListener);
+    };
+  }, []);
+
+  useEffect(() => {
     const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
     const configuredWsUrl = import.meta.env.VITE_CHAT_WS_URL;
     const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
