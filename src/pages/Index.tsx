@@ -296,12 +296,12 @@ const Index = () => {
 
             {currentUser ? (
               <>
-            {/* Satım İlanları Tablosu */}
+            {/* Alım İlanları Tablosu */}
             <div className="mb-10">
-              <h3 className="font-bold text-lg mb-2 text-red-600 text-left">Satım İlanları</h3>
-              <div className="overflow-x-auto overflow-y-auto max-h-[430px] rounded-xl bg-red-50 dark:bg-[#8B0000] transition-colors">
+              <h3 className="font-bold text-lg mb-2 text-green-700 text-left">Alım İlanları</h3>
+              <div className="overflow-x-auto overflow-y-auto max-h-[430px] rounded-xl bg-green-50 dark:bg-[#1e2a23] transition-colors">
                 <table className="min-w-full border text-sm">
-                  <thead className="bg-red-50 dark:bg-[#8B0000] transition-colors">
+                  <thead className="bg-green-50 dark:bg-[#233a2c] transition-colors">
                     <tr>
                       <th className="px-2 py-1 border text-left">Döviz</th>
                       <th className="px-2 py-1 border text-left">Miktar</th>
@@ -314,8 +314,8 @@ const Index = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {sellListings.map((listing) => (
-                      <tr key={listing.id} className="border-b bg-red-100 dark:bg-[#8B0000] transition-colors">
+                    {buyListings.map((listing) => (
+                      <tr key={listing.id} className="border-b bg-green-100 dark:bg-[#233a2c] transition-colors">
                         <td className="px-2 py-1 border">{listing.currencyFlag} {listing.currency}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
@@ -340,12 +340,12 @@ const Index = () => {
               </div>
             </div>
 
-            {/* Alım İlanları Tablosu */}
+            {/* Satım İlanları Tablosu */}
             <div className="mb-10">
-              <h3 className="font-bold text-lg mb-2 text-green-700 text-left">Alım İlanları</h3>
-              <div className="overflow-x-auto overflow-y-auto max-h-[430px] rounded-xl bg-green-50 dark:bg-[#1e2a23] transition-colors">
+              <h3 className="font-bold text-lg mb-2 text-red-600 text-left">Satım İlanları</h3>
+              <div className="overflow-x-auto overflow-y-auto max-h-[430px] rounded-xl bg-red-50 dark:bg-[#8B0000] transition-colors">
                 <table className="min-w-full border text-sm">
-                  <thead className="bg-green-50 dark:bg-[#233a2c] transition-colors">
+                  <thead className="bg-red-50 dark:bg-[#8B0000] transition-colors">
                     <tr>
                       <th className="px-2 py-1 border text-left">Döviz</th>
                       <th className="px-2 py-1 border text-left">Miktar</th>
@@ -358,8 +358,8 @@ const Index = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {buyListings.map((listing) => (
-                      <tr key={listing.id} className="border-b bg-green-100 dark:bg-[#233a2c] transition-colors">
+                    {sellListings.map((listing) => (
+                      <tr key={listing.id} className="border-b bg-red-100 dark:bg-[#8B0000] transition-colors">
                         <td className="px-2 py-1 border">{listing.currencyFlag} {listing.currency}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
