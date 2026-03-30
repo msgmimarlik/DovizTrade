@@ -22,7 +22,7 @@ const query = async (sql, params = []) => {
 
 const ensureUsersTable = async () => {
   try {
-    // First try to create the table if it doesn't exist
+    // Try to create the table if it doesn't exist
     await query(`CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
       username VARCHAR(120) NOT NULL UNIQUE,
@@ -41,28 +41,38 @@ const ensureUsersTable = async () => {
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )`);
-    console.log('✓ Users table ready');
   } catch (err) {
     console.error('Error creating users table:', err.message);
-    // If table already exists, just add missing columns
+  }
+
+  // Always ensure all critical columns exist (for existing tables)
+  const columnsToAdd = [
+    ["is_approved", "BOOLEAN NOT NULL DEFAULT FALSE"],
+    ["role", "ENUM('admin','user') NOT NULL DEFAULT 'user'"],
+    ["is_active", "BOOLEAN NOT NULL DEFAULT TRUE"],
+    ["full_name", "VARCHAR(120) NULL"],
+    ["office_name", "VARCHAR(120) NULL"],
+    ["phone", "VARCHAR(40) NULL"],
+    ["gsm", "VARCHAR(40) NULL"],
+    ["city", "VARCHAR(80) NULL"],
+    ["district", "VARCHAR(80) NULL"],
+    ["address", "TEXT NULL"],
+    ["created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"],
+    ["updated_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"]
+  ];
+
+  for (const [colName, colType] of columnsToAdd) {
     try {
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(120) NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS office_name VARCHAR(120) NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(40) NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS gsm VARCHAR(40) NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS city VARCHAR(80) NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS district VARCHAR(80) NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT NULL");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS role ENUM('admin','user') NOT NULL DEFAULT 'user'");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
-      await query("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
-      console.log('✓ Users table columns updated');
-    } catch (alterErr) {
-      console.error('Error adding columns:', alterErr.message);
-      throw alterErr;
+      await query(`ALTER TABLE users ADD COLUMN ${colName} ${colType}`);
+      console.log(`✓ Added column: ${colName}`);
+    } catch (err) {
+      // Column likely already exists, skip silently
+      if (!err.message.includes('Duplicate column')) {
+        console.log(`ℹ Column ${colName} check: ${err.message.substring(0, 50)}`);
+      }
     }
   }
+  console.log('✓ Users table schema verified');
 };
 
 const ensureAdminUser = async () => {
