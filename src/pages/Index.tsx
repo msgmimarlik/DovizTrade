@@ -86,7 +86,14 @@ const Index = () => {
         if (rawUser) {
           const u = JSON.parse(rawUser);
           if (u?.id) {
-            ws.send(JSON.stringify({ type: "user:online", userId: u.id }));
+            ws.send(JSON.stringify({
+              type: "user:online",
+              userId: u.id,
+              name: u.name || u.fullName || u.username || String(u.id),
+              officeName: u.officeName || null,
+              location: u.location || null,
+              role: u.role || "user",
+            }));
             ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
           }
         }

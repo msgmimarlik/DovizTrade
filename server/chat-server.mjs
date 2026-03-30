@@ -60,6 +60,8 @@ const wss = new WebSocketServer({ port: PORT });
 const connectedSockets = new Map();
 // Tracks users whose browser tab is currently visible/active
 const activeTabUserIds = new Set();
+// Stores profile info for MySQL-auth users (not in local users array)
+const connectedUserProfiles = new Map(); // userId -> { name, officeName, location, role }
 
 const broadcast = (payload) => {
   const data = JSON.stringify(payload);
@@ -87,47 +89,60 @@ const broadcastListingsSnapshot = () => {
   });
 };
 
-const broadcastOnlineUsers = () => {
-  // Build set of online userIds from connected sockets
+const buildOnlineList = () => {
   const onlineIds = new Set(connectedSockets.values());
 
-  // Only expose approved/active non-admin users
-  const onlineList = users
+  // Start with users known to the WS server (non-admin, active)
+  const wsUserIds = new Set();
+  const list = users
     .filter((u) => u.isActive && u.role !== "admin")
-    .map((u) => ({
-      id: String(u.id),
-      name: u.name || u.username,
-      avatar: (u.name || u.username || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
-      isOnline: onlineIds.has(u.id),
-      officeName: u.officeName || null,
-      location: u.location || null,
-    }));
+    .map((u) => {
+      wsUserIds.add(u.id);
+      return {
+        id: String(u.id),
+        name: u.name || u.username,
+        avatar: (u.name || u.username || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+        isOnline: onlineIds.has(u.id),
+        officeName: u.officeName || null,
+        location: u.location || null,
+      };
+    });
 
-  broadcast({ type: "users:online", users: onlineList });
+  // Add MySQL-auth users that are connected but not in WS users array
+  for (const [userId, profile] of connectedUserProfiles.entries()) {
+    if (wsUserIds.has(userId)) continue; // already included above
+    if (profile.role === "admin") continue;
+    list.push({
+      id: String(userId),
+      name: profile.name || String(userId),
+      avatar: (profile.name || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+      isOnline: onlineIds.has(userId),
+      officeName: profile.officeName || null,
+      location: profile.location || null,
+    });
+  }
+
+  return list;
+};
+
+const broadcastOnlineUsers = () => {
+  broadcast({ type: "users:online", users: buildOnlineList() });
 };
 
 wss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "snapshot", messages, standardListings: annotateListings(standardListings), arbitrageListings: annotateListings(arbitrageListings) }));
 
   // Send current online users to the newly connected client
-  const onlineIds = new Set(connectedSockets.values());
-  const onlineList = users
-    .filter((u) => u.isActive && u.role !== "admin")
-    .map((u) => ({
-      id: String(u.id),
-      name: u.name || u.username,
-      avatar: (u.name || u.username || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
-      isOnline: onlineIds.has(u.id),
-      officeName: u.officeName || null,
-      location: u.location || null,
-    }));
-  socket.send(JSON.stringify({ type: "users:online", users: onlineList }));
+  socket.send(JSON.stringify({ type: "users:online", users: buildOnlineList() }));
 
   socket.on("close", () => {
     const userId = connectedSockets.get(socket);
     connectedSockets.delete(socket);
     if (userId !== undefined) {
       activeTabUserIds.delete(userId);
+      // Remove from profiles if no other socket is using this userId
+      const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
+      if (!stillConnected) connectedUserProfiles.delete(userId);
       broadcastOnlineUsers();
       broadcastListingsSnapshot();
     }
@@ -166,6 +181,15 @@ wss.on("connection", (socket) => {
         const userId = Number(message.userId);
         if (userId) {
           connectedSockets.set(socket, userId);
+          // Store profile info for users not in the local WS users array
+          if (!connectedUserProfiles.has(userId)) {
+            connectedUserProfiles.set(userId, {
+              name: message.name || String(userId),
+              officeName: message.officeName || null,
+              location: message.location || null,
+              role: message.role || "user",
+            });
+          }
           broadcastOnlineUsers();
           broadcastListingsSnapshot();
         }
