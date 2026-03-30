@@ -338,7 +338,7 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : listing.ownerOnline ? "bg-yellow-400" : "bg-gray-400"}`} title={listing.ownerTabActive ? "Aktif" : listing.ownerOnline ? "Bağlı (arka planda)" : "Çevrimdışı"} />
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : "bg-yellow-400"}`} title={listing.ownerTabActive ? "Aktif" : "Bağlı (arka planda)"} />
                               {listing.userName}
                             </span>
                           </td>
@@ -387,8 +387,8 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : listing.ownerOnline ? "bg-yellow-400" : "bg-gray-400"}`} title={listing.ownerTabActive ? "Aktif" : listing.ownerOnline ? "Bağlı (arka planda)" : "Çevrimdışı"} />
-                              {listing.userName}
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : "bg-yellow-400"}`} title={listing.ownerTabActive ? "Aktif" : "Bağlı (arka planda)"} />
+                              {listing.userName}{listing.ownerTabActive ? "" : listing.ownerOnline ? " 🟡" : ""}
                             </span>
                           </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
@@ -436,7 +436,7 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                         <td className="px-2 py-1 border">
                           <span className="flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : listing.ownerOnline ? "bg-yellow-400" : "bg-gray-400"}`} title={listing.ownerTabActive ? "Aktif" : listing.ownerOnline ? "Bağlı (arka planda)" : "Çevrimdışı"} />
+                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : "bg-yellow-400"}`} title={listing.ownerTabActive ? "Aktif" : "Bağlı (arka planda)"} />
                             {listing.userName}
                           </span>
                         </td>

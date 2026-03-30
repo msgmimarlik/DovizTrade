@@ -142,7 +142,17 @@ wss.on("connection", (socket) => {
       activeTabUserIds.delete(userId);
       // Remove from profiles if no other socket is using this userId
       const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
-      if (!stillConnected) connectedUserProfiles.delete(userId);
+      if (!stillConnected) {
+        connectedUserProfiles.delete(userId);
+        // Delete all listings owned by this user and notify clients
+        const deletedIds = [
+          ...standardListings.filter((l) => l.ownerId === userId).map((l) => l.id),
+          ...arbitrageListings.filter((l) => l.ownerId === userId).map((l) => l.id),
+        ];
+        standardListings = standardListings.filter((l) => l.ownerId !== userId);
+        arbitrageListings = arbitrageListings.filter((l) => l.ownerId !== userId);
+        deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
+      }
       broadcastOnlineUsers();
       broadcastListingsSnapshot();
     }
