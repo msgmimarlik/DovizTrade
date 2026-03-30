@@ -127,9 +127,9 @@ const broadcastOnlineUsers = () => {
   // Build set of online userIds from connected sockets
   const onlineIds = new Set(connectedSockets.values());
 
-  // Only expose approved/active users from the users list
+  // Only expose approved/active non-admin users
   const onlineList = users
-    .filter((u) => u.isActive)
+    .filter((u) => u.isActive && u.role !== "admin")
     .map((u) => ({
       id: String(u.id),
       name: u.name || u.username,
@@ -148,7 +148,7 @@ wss.on("connection", (socket) => {
   // Send current online users to the newly connected client
   const onlineIds = new Set(connectedSockets.values());
   const onlineList = users
-    .filter((u) => u.isActive)
+    .filter((u) => u.isActive && u.role !== "admin")
     .map((u) => ({
       id: String(u.id),
       name: u.name || u.username,
