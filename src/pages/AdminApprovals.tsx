@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { apiUrl } from "@/lib/api";
 
 type PendingRegistration = {
   id: number;
@@ -42,8 +43,8 @@ const AdminApprovals = () => {
   const loadAdminData = async () => {
     try {
       const [pendingRes, usersRes] = await Promise.all([
-        fetch("/api/admin/pending-users"),
-        fetch("/api/admin/users"),
+        fetch(apiUrl("/api/admin/pending-users")),
+        fetch(apiUrl("/api/admin/users")),
       ]);
 
       if (!pendingRes.ok || !usersRes.ok) {
@@ -84,7 +85,7 @@ const AdminApprovals = () => {
 
   const approveApplication = async (applicationId: number) => {
     try {
-      const response = await fetch(`/api/admin/users/${applicationId}/approve`, {
+      const response = await fetch(apiUrl(`/api/admin/users/${applicationId}/approve`), {
         method: "PATCH",
       });
       const payload = await response.json();
@@ -101,7 +102,7 @@ const AdminApprovals = () => {
 
   const rejectApplication = async (applicationId: number) => {
     try {
-      const response = await fetch(`/api/admin/users/${applicationId}`, {
+      const response = await fetch(apiUrl(`/api/admin/users/${applicationId}`), {
         method: "DELETE",
       });
       const payload = await response.json();
@@ -123,7 +124,7 @@ const AdminApprovals = () => {
     }
 
     try {
-      const response = await fetch(`/api/admin/users/${userId}/active`, {
+      const response = await fetch(apiUrl(`/api/admin/users/${userId}/active`), {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_active: !targetUser.is_active }),
