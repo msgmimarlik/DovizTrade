@@ -346,7 +346,13 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
-                            <button className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition" onClick={() => handleStartTransaction(listing)}>İşlem Yap</button>
+                            <button
+                              className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={Boolean(listing.ownerOnline && !listing.ownerTabActive)}
+                              onClick={() => handleStartTransaction(listing)}
+                            >
+                              İşlem Yap
+                            </button>
                             {canDeleteListing(listing) && (
                               <button className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition" onClick={() => handleDeleteListing(listing.id)}>
                                 <X className="w-4 h-4" />
@@ -395,7 +401,13 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
-                            <button className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition" onClick={() => handleStartTransaction(listing)}>İşlem Yap</button>
+                            <button
+                              className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={Boolean(listing.ownerOnline && !listing.ownerTabActive)}
+                              onClick={() => handleStartTransaction(listing)}
+                            >
+                              İşlem Yap
+                            </button>
                             {canDeleteListing(listing) && (
                               <button className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition" onClick={() => handleDeleteListing(listing.id)}>
                                 <X className="w-4 h-4" />
@@ -444,7 +456,13 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
-                            <button className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition" onClick={() => handleStartTransaction(listing)}>İşlem Yap</button>
+                            <button
+                              className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={Boolean(listing.ownerOnline && !listing.ownerTabActive)}
+                              onClick={() => handleStartTransaction(listing)}
+                            >
+                              İşlem Yap
+                            </button>
                             {canDeleteListing(listing) && (
                               <button className="bg-red-600 text-white px-2 py-1 rounded hover:bg-red-700 transition" onClick={() => handleDeleteListing(listing.id)}>
                                 <X className="w-4 h-4" />
