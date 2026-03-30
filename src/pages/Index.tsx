@@ -1,7 +1,7 @@
 import CurrencyTicker from "@/components/CurrencyTicker";
 import Navbar from "@/components/Navbar";
 import CurrencyFilter from "@/components/CurrencyFilter";
-import TransactionHistory from "@/components/TransactionHistory";
+
 import ExchangeListingCard from "@/components/ExchangeListingCard";
 import OnlineUsersPanel from "@/components/OnlineUsersPanel";
 import ChatDialog from "@/components/ChatDialog";
@@ -219,6 +219,9 @@ const Index = () => {
       ? `${listing.currency} ${listing.amount}`
       : `${listing.currency} ${listing.amount} @ ${listing.rate}`;
 
+    const finalAmount = listing.isDivisible ? Number(transactionAmount) : Number(listing.amount);
+    const finalTotalTL = listing.rate ? Math.round(finalAmount * listing.rate) : 0;
+
     ws.send(
       JSON.stringify({
         type: "transaction:start",
@@ -226,7 +229,7 @@ const Index = () => {
         actorName: currentUser.name || "Kullanici",
         ownerName: listing.userName,
         listingLabel,
-        transactionAmount: listing.isDivisible ? transactionAmount : listing.amount,
+        transactionAmount: finalAmount,
         actorInfo: {
           email: currentUser.email,
           officeName: currentUser.officeName,
@@ -235,6 +238,26 @@ const Index = () => {
         },
       }),
     );
+
+    // Save to localStorage for transaction history
+    try {
+      const storageKey = `userTransactions_${currentUser.id}`;
+      const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
+      const newTx = {
+        id: Date.now(),
+        type: listing.type === "sell" ? "buy" : "sell",
+        currency: listing.currency,
+        currencyFlag: listing.currencyFlag || "",
+        amount: finalAmount,
+        rate: listing.rate || 0,
+        totalTL: finalTotalTL,
+        counterparty: listing.userName,
+        time: new Date().toLocaleString("tr-TR"),
+      };
+      localStorage.setItem(storageKey, JSON.stringify([newTx, ...existing].slice(0, 100)));
+    } catch {
+      // ignore storage errors
+    }
 
     toast.success("Islem baslatildi.");
     setSelectedListing(null);

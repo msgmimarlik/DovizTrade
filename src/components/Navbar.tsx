@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/hooks/useTheme";
-import MyTransactionsModal from "@/components/MyTransactionsModal";
+import MyTransactionsModal, { type MyTransaction } from "@/components/MyTransactionsModal";
 import { toast } from "sonner";
 
 type CurrentUser = {
@@ -20,6 +20,7 @@ const Navbar = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [showTransactions, setShowTransactions] = useState(false);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+  const [myTransactions, setMyTransactions] = useState<MyTransaction[]>([]);
   const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
 
@@ -31,11 +32,16 @@ const Navbar = () => {
     }
 
     try {
-      setCurrentUser(JSON.parse(rawUser));
+      const user = JSON.parse(rawUser);
+      setCurrentUser(user);
+      if (user?.id) {
+        const raw = localStorage.getItem(`userTransactions_${user.id}`);
+        setMyTransactions(raw ? JSON.parse(raw) : []);
+      }
     } catch {
       setCurrentUser(null);
     }
-  }, []);
+  }, [showTransactions]);
 
   const handleCreateListingClick = () => {
     if (!currentUser) {
@@ -135,7 +141,7 @@ const Navbar = () => {
         )}
       </nav>
 
-      {showTransactions && <MyTransactionsModal onClose={() => setShowTransactions(false)} />}
+      {showTransactions && <MyTransactionsModal onClose={() => setShowTransactions(false)} transactions={myTransactions} />}
     </>
   );
 };
