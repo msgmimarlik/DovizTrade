@@ -162,10 +162,12 @@ wss.on("connection", (socket) => {
 
       if (message.type === "user:online") {
         // Called by frontend when a user restores session from localStorage
+        // Accept any numeric userId — auth is handled by the REST API (MySQL)
         const userId = Number(message.userId);
-        if (userId && users.some((u) => u.id === userId && u.isActive)) {
+        if (userId) {
           connectedSockets.set(socket, userId);
           broadcastOnlineUsers();
+          broadcastListingsSnapshot();
         }
         return;
       }
