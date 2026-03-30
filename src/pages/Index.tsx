@@ -21,26 +21,8 @@ import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { toast } from "sonner";
 
-const mockListings = [
-  { id: 1, type: "sell" as const, currency: "USD", currencyFlag: "🇺🇸", amount: 5000, rate: 38.50, totalTL: 192500, location: "İstanbul", duration: "30 dk", userName: "Ahmet K.", minAmount: 1000 },
-  { id: 2, type: "buy" as const, currency: "EUR", currencyFlag: "🇪🇺", amount: 3000, rate: 41.20, totalTL: 123600, location: "Ankara", duration: "45 dk", userName: "Elif Y.", minAmount: 500 },
-  { id: 3, type: "sell" as const, currency: "GBP", currencyFlag: "🇬🇧", amount: 2000, rate: 48.80, totalTL: 97600, location: "İzmir", duration: "1 saat", userName: "Mehmet S." },
-  { id: 4, type: "buy" as const, currency: "GAU", currencyFlag: "🥇", amount: 10, rate: 3845, totalTL: 38450, location: "Bursa", duration: "1 saat", userName: "Fatma D.", minAmount: 1 },
-  { id: 5, type: "sell" as const, currency: "USD", currencyFlag: "🇺🇸", amount: 10000, rate: 38.45, totalTL: 384500, location: "Antalya", duration: "2 saat", userName: "Can B.", minAmount: 2000 },
-  { id: 6, type: "buy" as const, currency: "EUR", currencyFlag: "🇪🇺", amount: 7500, rate: 41.30, totalTL: 309750, location: "İstanbul", duration: "2 saat", userName: "Zeynep A." },
-  { id: 7, type: "sell" as const, currency: "GAU", currencyFlag: "🥇", amount: 25, rate: 3850, totalTL: 96250, location: "Ankara", duration: "3 saat", userName: "Hasan T.", minAmount: 5 },
-  { id: 8, type: "buy" as const, currency: "USD", currencyFlag: "🇺🇸", amount: 20000, rate: 38.55, totalTL: 771000, location: "Konya", duration: "3 saat", userName: "Ali R.", minAmount: 5000 },
-  { id: 9, type: "sell" as const, currency: "GBP", currencyFlag: "🇬🇧", amount: 1500, rate: 48.90, totalTL: 73350, location: "İstanbul", duration: "4 saat", userName: "Ayşe M." },
-  { id: 10, type: "sell" as const, currency: "USDT", currencyFlag: "🪙", amount: 12000, rate: 38.40, totalTL: 460800, location: "İstanbul", duration: "30 dk", userName: "Burak U.", minAmount: 100 },
-  { id: 11, type: "buy" as const, currency: "USDT", currencyFlag: "🪙", amount: 8000, rate: 38.45, totalTL: 307600, location: "Ankara", duration: "1 saat", userName: "Selin A.", minAmount: 50 },
-];
-
-const mockArbitrageListings = [
-  { id: 101, currency: "USD/EUR", currencyFlag: "🇺🇸/🇪🇺", amount: 12000, rate: 0.91, total: "10,920 EUR", userName: "Emre T.", location: "Berlin", duration: "2 saat" },
-  { id: 102, currency: "EUR/GBP", currencyFlag: "🇪🇺/🇬🇧", amount: 8000, rate: 0.86, total: "6,880 GBP", userName: "Merve L.", location: "Londra", duration: "90 dk" },
-  { id: 103, currency: "USDT/USD", currencyFlag: "🪙/🇺🇸", amount: 25000, rate: 1.00, total: "25,000 USD", userName: "Kerem A.", location: "Dubai", duration: "1 saat" },
-  { id: 104, currency: "GBP/USD", currencyFlag: "🇬🇧/🇺🇸", amount: 5000, rate: 1.29, total: "6,450 USD", userName: "Derya N.", location: "Amsterdam", duration: "3 saat" },
-];
+const mockListings: any[] = [];
+const mockArbitrageListings: any[] = [];
 
 const sortByCurrencyAndRate = <T extends { currency: string; rate: number }>(
   listings: T[],

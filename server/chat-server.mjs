@@ -49,61 +49,10 @@ await loadState();
 
 const PORT = Number(process.env.CHAT_WS_PORT ?? 8787);
 
-const messages = [
-  { id: "g1", userName: "Ahmet K.", avatar: "AK", text: "Bugun dolar duser mi sizce?", time: "14:05" },
-  { id: "g2", userName: "Elif Y.", avatar: "EY", text: "FED karari bekleniyor, ona gore hareket ederim.", time: "14:08" },
-  { id: "g3", userName: "Mehmet S.", avatar: "MS", text: "Altin 3900'u gorur mu bu hafta?", time: "14:12" },
-  { id: "g4", userName: "Fatma D.", avatar: "FD", text: "Sterlin almak isteyenler var mi? Iyi kurum var.", time: "14:18" },
-  { id: "g5", userName: "Can B.", avatar: "CB", text: "Euro 41'in altina inerse aliciyim.", time: "14:22" },
-  { id: "g6", userName: "Zeynep A.", avatar: "ZA", text: "Herkese iyi aksamlar", time: "14:30" },
-];
+const messages = [];
 
-const baseStandardListings = [
-  { id: 1, kind: "standard", type: "sell", currency: "USD", currencyFlag: "🇺🇸", amount: 5000, rate: 38.5, totalTL: 192500, location: "Istanbul", duration: "30 dk", userName: "Ahmet K." },
-  { id: 2, kind: "standard", type: "buy", currency: "EUR", currencyFlag: "🇪🇺", amount: 3000, rate: 41.2, totalTL: 123600, location: "Ankara", duration: "45 dk", userName: "Elif Y." },
-  { id: 3, kind: "standard", type: "sell", currency: "GBP", currencyFlag: "🇬🇧", amount: 2000, rate: 48.8, totalTL: 97600, location: "Izmir", duration: "1 saat", userName: "Mehmet S." },
-  { id: 4, kind: "standard", type: "buy", currency: "GAU", currencyFlag: "🥇", amount: 10, rate: 3845, totalTL: 38450, location: "Bursa", duration: "1 saat", userName: "Fatma D." },
-  { id: 5, kind: "standard", type: "sell", currency: "USD", currencyFlag: "🇺🇸", amount: 10000, rate: 38.45, totalTL: 384500, location: "Antalya", duration: "2 saat", userName: "Can B." },
-  { id: 6, kind: "standard", type: "buy", currency: "EUR", currencyFlag: "🇪🇺", amount: 7500, rate: 41.3, totalTL: 309750, location: "Istanbul", duration: "2 saat", userName: "Zeynep A." },
-  { id: 7, kind: "standard", type: "sell", currency: "GAU", currencyFlag: "🥇", amount: 25, rate: 3850, totalTL: 96250, location: "Ankara", duration: "3 saat", userName: "Hasan T." },
-  { id: 8, kind: "standard", type: "buy", currency: "USD", currencyFlag: "🇺🇸", amount: 20000, rate: 38.55, totalTL: 771000, location: "Konya", duration: "3 saat", userName: "Ali R." },
-  { id: 9, kind: "standard", type: "sell", currency: "GBP", currencyFlag: "🇬🇧", amount: 1500, rate: 48.9, totalTL: 73350, location: "Istanbul", duration: "4 saat", userName: "Ayse M." },
-  { id: 10, kind: "standard", type: "sell", currency: "USDT", currencyFlag: "🪙", amount: 12000, rate: 38.4, totalTL: 460800, location: "Istanbul", duration: "30 dk", userName: "Burak U." },
-  { id: 11, kind: "standard", type: "buy", currency: "USDT", currencyFlag: "🪙", amount: 8000, rate: 38.45, totalTL: 307600, location: "Ankara", duration: "1 saat", userName: "Selin A." },
-];
-
-const baseArbitrageListings = [
-  { id: 101, kind: "arbitrage", currency: "USD/EUR", currencyFlag: "🇺🇸/🇪🇺", amount: 12000, rate: 0.91, total: "10,920 EUR", userName: "Emre T.", location: "Berlin", duration: "2 saat" },
-  { id: 102, kind: "arbitrage", currency: "EUR/GBP", currencyFlag: "🇪🇺/🇬🇧", amount: 8000, rate: 0.86, total: "6,880 GBP", userName: "Merve L.", location: "Londra", duration: "90 dk" },
-  { id: 103, kind: "arbitrage", currency: "USDT/USD", currencyFlag: "🪙/🇺🇸", amount: 25000, rate: 1, total: "25,000 USD", userName: "Kerem A.", location: "Dubai", duration: "1 saat" },
-  { id: 104, kind: "arbitrage", currency: "GBP/USD", currencyFlag: "🇬🇧/🇺🇸", amount: 5000, rate: 1.29, total: "6,450 USD", userName: "Derya N.", location: "Amsterdam", duration: "3 saat" },
-];
-
-const expandListings = (listings, targetCount, amountStep, idBase, totalBuilder) => [
-  ...listings,
-  ...Array.from({ length: Math.max(0, targetCount - listings.length) }, (_, i) => {
-    const template = listings[i % listings.length];
-    const amount = template.amount + (i + 1) * amountStep;
-    return {
-      ...template,
-      id: idBase + i,
-      amount,
-      totalTL: template.totalTL !== undefined ? Math.round(amount * template.rate) : undefined,
-      total: template.total !== undefined ? totalBuilder(template, amount) : undefined,
-      userName: `${template.userName.split(" ")[0]} ${String.fromCharCode(65 + (i % 26))}.`,
-    };
-  }),
-];
-
-let standardListings = [
-  ...expandListings(baseStandardListings.filter((item) => item.type === "sell"), 20, 75, 1000, () => undefined),
-  ...expandListings(baseStandardListings.filter((item) => item.type === "buy"), 22, 95, 3000, () => undefined),
-].sort((a, b) => a.id - b.id);
-
-let arbitrageListings = expandListings(baseArbitrageListings, 16, 120, 2000, (template, amount) => {
-  const [, quote] = template.currency.split("/");
-  return `${(amount * template.rate).toLocaleString("tr-TR")} ${quote}`;
-});
+let standardListings = [];
+let arbitrageListings = [];
 
 const wss = new WebSocketServer({ port: PORT });
 
