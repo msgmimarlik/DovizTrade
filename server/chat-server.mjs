@@ -234,14 +234,16 @@ wss.on("connection", (socket) => {
         const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
         if (!stillConnected) {
           connectedUserProfiles.delete(userId);
-          const deletedIds = [
-            ...standardListings.filter((l) => l.ownerId === userId).map((l) => l.id),
-            ...arbitrageListings.filter((l) => l.ownerId === userId).map((l) => l.id),
-          ];
-          standardListings = standardListings.filter((l) => l.ownerId !== userId);
-          arbitrageListings = arbitrageListings.filter((l) => l.ownerId !== userId);
-          deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
         }
+
+        // Explicit logout must invalidate all listings of that user immediately.
+        const deletedIds = [
+          ...standardListings.filter((l) => l.ownerId === userId).map((l) => l.id),
+          ...arbitrageListings.filter((l) => l.ownerId === userId).map((l) => l.id),
+        ];
+        standardListings = standardListings.filter((l) => l.ownerId !== userId);
+        arbitrageListings = arbitrageListings.filter((l) => l.ownerId !== userId);
+        deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
 
         broadcastOnlineUsers();
         broadcastListingsSnapshot();
