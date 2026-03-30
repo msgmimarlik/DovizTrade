@@ -9,28 +9,6 @@ const stateFilePath = path.join(__dirname, "chat-state.json");
 
 const defaultUsers = [
   {
-    id: 900002,
-    name: "Demo Kullanici",
-    officeName: "Demo Ofis",
-    username: "demo.kullanici",
-    email: "demo@dovizcim.com",
-    password: "Demo12345",
-    location: "Istanbul / Merkez",
-    role: "user",
-    isActive: true,
-  },
-  {
-    id: 900003,
-    name: "Demo Kullanici 2",
-    officeName: "Demo Ofis 2",
-    username: "demo2.kullanici",
-    email: "demo2@dovizcim.com",
-    password: "Demo23456",
-    location: "Ankara / Merkez",
-    role: "user",
-    isActive: true,
-  },
-  {
     id: 900004,
     name: "Murat Secmen",
     officeName: "DovizTrade Yonetim",
