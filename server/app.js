@@ -2,8 +2,17 @@ import express from 'express';
 import mysql from 'mysql2';
 import bodyParser from 'body-parser';
 import bcrypt from 'bcrypt';
+import cors from 'cors';
 
 const app = express();
+app.use(cors({
+  origin: [
+    'https://doviztrade.com',
+    'https://www.doviztrade.com',
+  ],
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(bodyParser.json());
 
 const db = mysql.createConnection({
