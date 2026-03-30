@@ -160,9 +160,9 @@ const Login = () => {
         <div className="bg-card border border-border rounded-xl p-8">
           <div className="flex items-center gap-2 mb-6">
             <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-display font-bold text-lg">D</span>
+              <span className="text-primary-foreground font-display font-bold text-sm">DT</span>
             </div>
-            <span className="font-display font-bold text-xl text-foreground">Dövizcim</span>
+            <span className="font-display font-bold text-xl text-foreground">DovizTrade</span>
           </div>
 
           <h1 className="font-display text-2xl font-bold text-foreground mb-2">

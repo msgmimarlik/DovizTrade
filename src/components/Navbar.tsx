@@ -65,9 +65,9 @@ const Navbar = () => {
         <div className="container mx-auto px-4 py-3 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2" onClick={(e) => { e.preventDefault(); navigate("/"); }}>
             <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-display font-bold text-lg">D</span>
+              <span className="text-primary-foreground font-display font-bold text-sm">DT</span>
             </div>
-            <span className="font-display font-bold text-xl text-foreground">Dövizcim</span>
+            <span className="font-display font-bold text-xl text-foreground">DovizTrade</span>
           </a>
 
           <div className="hidden md:flex items-center gap-3">
