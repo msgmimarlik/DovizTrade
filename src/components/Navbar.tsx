@@ -25,7 +25,7 @@ const Navbar = () => {
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
-    const rawUser = localStorage.getItem("currentUser");
+    const rawUser = sessionStorage.getItem("currentUser");
     if (!rawUser) {
       setCurrentUser(null);
       return;
@@ -53,6 +53,7 @@ const Navbar = () => {
   };
 
   const handleLogout = () => {
+    sessionStorage.removeItem("currentUser");
     localStorage.removeItem("currentUser");
     setCurrentUser(null);
     toast.success("Çıkış yapıldı.");

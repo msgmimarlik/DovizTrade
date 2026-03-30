@@ -61,7 +61,7 @@ const Index = () => {
 
   useEffect(() => {
     try {
-      const rawUser = localStorage.getItem("currentUser");
+      const rawUser = sessionStorage.getItem("currentUser");
       setCurrentUser(rawUser ? JSON.parse(rawUser) : null);
     } catch {
       setCurrentUser(null);
@@ -82,7 +82,7 @@ const Index = () => {
     ws.onopen = () => {
       // Announce presence so the server marks this user as online
       try {
-        const rawUser = localStorage.getItem("currentUser");
+        const rawUser = sessionStorage.getItem("currentUser");
         if (rawUser) {
           const u = JSON.parse(rawUser);
           if (u?.id) {

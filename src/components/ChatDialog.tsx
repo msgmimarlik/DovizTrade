@@ -60,7 +60,7 @@ const updateConvoSummary = (myId: string, them: OnlineUser, lastMsg: string, tim
 
 const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
   const [currentUser] = useState<{ id: number; name?: string } | null>(() => {
-    try { return JSON.parse(localStorage.getItem("currentUser") || "null"); } catch { return null; }
+    try { return JSON.parse(sessionStorage.getItem("currentUser") || "null"); } catch { return null; }
   });
   const myId = String(currentUser?.id ?? "");
   const theirId = user.id;

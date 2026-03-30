@@ -48,7 +48,7 @@ const GeneralChat = () => {
 
   useEffect(() => {
     try {
-      const rawUser = localStorage.getItem("currentUser");
+      const rawUser = sessionStorage.getItem("currentUser");
       if (!rawUser) {
         setIsAdmin(false);
         setCurrentUser(null);

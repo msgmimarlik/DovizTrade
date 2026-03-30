@@ -36,10 +36,10 @@ const Messages = () => {
   const [currentUser, setCurrentUser] = useState<{ id: number; name?: string; role?: string } | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
-  // Load current user from localStorage
+  // Load current user from sessionStorage
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("currentUser");
+      const raw = sessionStorage.getItem("currentUser");
       setCurrentUser(raw ? JSON.parse(raw) : null);
     } catch {
       setCurrentUser(null);
@@ -67,7 +67,7 @@ const Messages = () => {
 
     ws.onopen = () => {
       try {
-        const raw = localStorage.getItem("currentUser");
+        const raw = sessionStorage.getItem("currentUser");
         if (raw) {
           const u = JSON.parse(raw);
           if (u?.id) ws.send(JSON.stringify({ type: "user:online", userId: u.id }));

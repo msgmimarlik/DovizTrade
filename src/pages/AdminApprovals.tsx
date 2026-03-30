@@ -60,7 +60,7 @@ const AdminApprovals = () => {
   };
 
   useEffect(() => {
-    const rawCurrentUser = localStorage.getItem("currentUser");
+    const rawCurrentUser = sessionStorage.getItem("currentUser");
     if (!rawCurrentUser) {
       toast.error("Yonetici paneli icin giris yapin.");
       navigate("/login");

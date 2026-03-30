@@ -29,7 +29,7 @@ const CreateListing = () => {
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
   useEffect(() => {
-    const rawUser = localStorage.getItem("currentUser");
+    const rawUser = sessionStorage.getItem("currentUser");
     if (!rawUser) {
       toast.error("İlan oluşturmak için önce giriş yapın.");
       navigate("/login");

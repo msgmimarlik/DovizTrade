@@ -81,7 +81,8 @@ const Login = () => {
           return;
         }
 
-        localStorage.setItem("currentUser", JSON.stringify(payload.user));
+        sessionStorage.setItem("currentUser", JSON.stringify(payload.user));
+        localStorage.removeItem("currentUser");
         toast.success("Giriş başarılı.");
         navigate("/");
       } catch {
