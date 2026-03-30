@@ -129,6 +129,9 @@ let arbitrageListings = expandListings(baseArbitrageListings, 16, 120, 2000, (te
 
 const wss = new WebSocketServer({ port: PORT });
 
+// Track which users are currently connected: Map<socket, userId>
+const connectedSockets = new Map();
+
 const broadcast = (payload) => {
   const data = JSON.stringify(payload);
   wss.clients.forEach((client) => {
@@ -142,8 +145,49 @@ const broadcastListingsSnapshot = () => {
   broadcast({ type: "listings:snapshot", standardListings, arbitrageListings });
 };
 
+const broadcastOnlineUsers = () => {
+  // Build set of online userIds from connected sockets
+  const onlineIds = new Set(connectedSockets.values());
+
+  // Only expose approved/active users from the users list
+  const onlineList = users
+    .filter((u) => u.isActive)
+    .map((u) => ({
+      id: String(u.id),
+      name: u.name || u.username,
+      avatar: (u.name || u.username || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+      isOnline: onlineIds.has(u.id),
+      officeName: u.officeName || null,
+      location: u.location || null,
+    }));
+
+  broadcast({ type: "users:online", users: onlineList });
+};
+
 wss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "snapshot", messages, standardListings, arbitrageListings }));
+
+  // Send current online users to the newly connected client
+  const onlineIds = new Set(connectedSockets.values());
+  const onlineList = users
+    .filter((u) => u.isActive)
+    .map((u) => ({
+      id: String(u.id),
+      name: u.name || u.username,
+      avatar: (u.name || u.username || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+      isOnline: onlineIds.has(u.id),
+      officeName: u.officeName || null,
+      location: u.location || null,
+    }));
+  socket.send(JSON.stringify({ type: "users:online", users: onlineList }));
+
+  socket.on("close", () => {
+    const userId = connectedSockets.get(socket);
+    connectedSockets.delete(socket);
+    if (userId !== undefined) {
+      broadcastOnlineUsers();
+    }
+  });
 
   socket.on("message", async (rawData) => {
     try {
@@ -165,7 +209,19 @@ wss.on("connection", (socket) => {
         } else if (!user.isActive) {
           socket.send(JSON.stringify({ type: "login:error", error: "Hesabınız henüz yönetici tarafından onaylanmadı." }));
         } else {
+          connectedSockets.set(socket, user.id);
           socket.send(JSON.stringify({ type: "login:success", user }));
+          broadcastOnlineUsers();
+        }
+        return;
+      }
+
+      if (message.type === "user:online") {
+        // Called by frontend when a user restores session from localStorage
+        const userId = Number(message.userId);
+        if (userId && users.some((u) => u.id === userId && u.isActive)) {
+          connectedSockets.set(socket, userId);
+          broadcastOnlineUsers();
         }
         return;
       }

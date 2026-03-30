@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
-import { mockOnlineUsers, type OnlineUser } from "@/data/mockUsers";
+import { type OnlineUser } from "@/data/mockUsers";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { toast } from "sonner";
@@ -69,6 +69,7 @@ const Index = () => {
   const navigate = useNavigate();
   const [chatUser, setChatUser] = useState<OnlineUser | null>(null);
   const [currentUser, setCurrentUser] = useState<{ id: number; name?: string; role?: "admin" | "user" } | null>(null);
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [standardListings, setStandardListings] = useState<any[]>(mockListings);
   const [arbitrageListings, setArbitrageListings] = useState<any[]>(mockArbitrageListings);
   const [selectedListing, setSelectedListing] = useState<any | null>(null);
@@ -96,6 +97,21 @@ const Index = () => {
     const ws = new WebSocket(wsUrl);
     listingsWsRef.current = ws;
 
+    ws.onopen = () => {
+      // Announce presence so the server marks this user as online
+      try {
+        const rawUser = localStorage.getItem("currentUser");
+        if (rawUser) {
+          const u = JSON.parse(rawUser);
+          if (u?.id) {
+            ws.send(JSON.stringify({ type: "user:online", userId: u.id }));
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as
@@ -103,6 +119,7 @@ const Index = () => {
           | { type: "listings:snapshot"; standardListings?: any[]; arbitrageListings?: any[] }
           | { type: "listing:created"; listing: any }
           | { type: "listing:deleted"; id: number }
+          | { type: "users:online"; users: OnlineUser[] }
           | { type: "transaction:started"; actorName: string; listingId: number; listingLabel?: string; ownerName?: string };
 
         if (payload.type === "snapshot") {
@@ -129,6 +146,10 @@ const Index = () => {
           setArbitrageListings((prev) => prev.filter((item) => item.id !== payload.id));
         }
 
+        if (payload.type === "users:online") {
+          setOnlineUsers(payload.users);
+        }
+
         if (payload.type === "transaction:started") {
           // Eğer mevcut kullanıcı ilan sahibi ise modal aç
           if (
@@ -136,8 +157,6 @@ const Index = () => {
             payload.ownerName &&
             (payload.ownerName === currentUser.name)
           ) {
-            // Kullanıcı bilgilerini bulmak için actorName ile eşleşen kullanıcıyı bul
-            // (Gerçek uygulamada actorId veya daha fazla bilgi ile yapılmalı)
             setTransactionModal({
               actorName: payload.actorName,
               listingId: payload.listingId,
@@ -413,7 +432,7 @@ const Index = () => {
             <aside className="w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-4">
               <div className="lg:sticky lg:top-20 space-y-4">
                 <GeneralChat />
-                <OnlineUsersPanel users={mockOnlineUsers} onUserClick={setChatUser} />
+                <OnlineUsersPanel users={onlineUsers} onUserClick={setChatUser} />
               </div>
             </aside>
           )}

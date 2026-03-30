@@ -6,10 +6,12 @@ export interface OnlineUser {
   avatar: string;
   isOnline: boolean;
   lastSeen?: string;
-  hasConversation: boolean;
+  hasConversation?: boolean;
   lastMessage?: string;
   lastMessageTime?: string;
   unreadCount?: number;
+  officeName?: string | null;
+  location?: string | null;
 }
 
 export const mockOnlineUsers: OnlineUser[] = [
