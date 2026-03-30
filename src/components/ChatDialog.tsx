@@ -2,33 +2,144 @@ import { useState, useRef, useEffect } from "react";
 import { X, Send, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import type { OnlineUser, ChatMessage } from "@/data/mockUsers";
-import { mockChats } from "@/data/mockUsers";
+import type { OnlineUser } from "@/data/mockUsers";
+
+interface ChatMessage {
+  id: string;
+  senderId: string;
+  text: string;
+  time: string;
+  isMine: boolean;
+}
+
+interface ConvoSummary {
+  userId: string;
+  name: string;
+  avatar: string;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
+}
 
 interface ChatDialogProps {
   user: OnlineUser;
   onClose: () => void;
 }
 
+const getMsgKey = (id1: string, id2: string) => `chat_msgs_${[id1, id2].sort().join("_")}`;
+const getConvoKey = (myId: string) => `doviz_convos_${myId}`;
+
+const buildWsUrl = () => {
+  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const configuredWsUrl = (import.meta.env.VITE_CHAT_WS_URL) as string | undefined;
+  const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
+  const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  return configuredWsUrl && (!isLocalWsUrl || isLocalHost)
+    ? configuredWsUrl
+    : `${wsProtocol}://${window.location.host}/ws`;
+};
+
+const updateConvoSummary = (myId: string, them: OnlineUser, lastMsg: string, time: string, addUnread: boolean) => {
+  try {
+    const key = getConvoKey(myId);
+    const convos: ConvoSummary[] = JSON.parse(localStorage.getItem(key) || "[]");
+    const idx = convos.findIndex((c) => c.userId === them.id);
+    const updated: ConvoSummary = {
+      userId: them.id,
+      name: them.name,
+      avatar: them.avatar,
+      lastMessage: lastMsg,
+      lastMessageTime: time,
+      unreadCount: addUnread ? ((convos[idx]?.unreadCount || 0) + 1) : 0,
+    };
+    if (idx >= 0) convos[idx] = updated;
+    else convos.unshift(updated);
+    localStorage.setItem(key, JSON.stringify(convos));
+  } catch { /* ignore */ }
+};
+
 const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
-  const [messages, setMessages] = useState<ChatMessage[]>(mockChats[user.id] || []);
+  const [currentUser] = useState<{ id: number; name?: string } | null>(() => {
+    try { return JSON.parse(localStorage.getItem("currentUser") || "null"); } catch { return null; }
+  });
+  const myId = String(currentUser?.id ?? "");
+  const theirId = user.id;
+
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (!myId) return [];
+    try { return JSON.parse(localStorage.getItem(getMsgKey(myId, theirId)) || "[]"); } catch { return []; }
+  });
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Persist messages to localStorage
+  useEffect(() => {
+    if (!myId) return;
+    localStorage.setItem(getMsgKey(myId, theirId), JSON.stringify(messages));
+  }, [messages, myId, theirId]);
+
+  // WebSocket for real-time private messages
+  useEffect(() => {
+    if (!myId) return;
+    const ws = new WebSocket(buildWsUrl());
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: "user:online", userId: Number(myId) }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "chat:private" && String(payload.fromId) === String(theirId)) {
+          const timeStr = payload.time || new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+          const newMsg: ChatMessage = {
+            id: `recv-${Date.now()}`,
+            senderId: theirId,
+            text: payload.text,
+            time: timeStr,
+            isMine: false,
+          };
+          setMessages((prev) => [...prev, newMsg]);
+          updateConvoSummary(myId, user, payload.text, timeStr, false);
+        }
+      } catch { /* ignore */ }
+    };
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, [myId, theirId]);
+
   const handleSend = () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !myId) return;
+    const timeStr = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
     const newMsg: ChatMessage = {
-      id: `new-${Date.now()}`,
-      senderId: "me",
+      id: `sent-${Date.now()}`,
+      senderId: myId,
       text: input.trim(),
-      time: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
+      time: timeStr,
       isMine: true,
     };
     setMessages((prev) => [...prev, newMsg]);
+
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "chat:private",
+        toId: theirId,
+        fromId: myId,
+        fromName: currentUser?.name || myId,
+        text: input.trim(),
+        time: timeStr,
+      }));
+    }
+    updateConvoSummary(myId, user, input.trim(), timeStr, false);
     setInput("");
   };
 
@@ -115,3 +226,4 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
 };
 
 export default ChatDialog;
+

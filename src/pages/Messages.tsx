@@ -2,23 +2,142 @@ import { ArrowLeft, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
-import { mockOnlineUsers, type OnlineUser } from "@/data/mockUsers";
+import { useState, useEffect, useRef } from "react";
+import type { OnlineUser } from "@/data/mockUsers";
 import ChatDialog from "@/components/ChatDialog";
+
+interface ConvoSummary {
+  userId: string;
+  name: string;
+  avatar: string;
+  lastMessage: string;
+  lastMessageTime: string;
+  unreadCount: number;
+}
+
+const getConvoKey = (myId: string) => `doviz_convos_${myId}`;
+
+const buildWsUrl = () => {
+  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const configuredWsUrl = (import.meta.env.VITE_CHAT_WS_URL) as string | undefined;
+  const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
+  const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  return configuredWsUrl && (!isLocalWsUrl || isLocalHost)
+    ? configuredWsUrl
+    : `${wsProtocol}://${window.location.host}/ws`;
+};
 
 const Messages = () => {
   const navigate = useNavigate();
   const [chatUser, setChatUser] = useState<OnlineUser | null>(null);
   const [search, setSearch] = useState("");
+  const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
+  const [conversations, setConversations] = useState<ConvoSummary[]>([]);
+  const [currentUser, setCurrentUser] = useState<{ id: number; name?: string; role?: string } | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
 
-  const conversationUsers = mockOnlineUsers.filter((u) => u.hasConversation);
-  const otherUsers = mockOnlineUsers.filter((u) => !u.hasConversation && u.isOnline);
+  // Load current user from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("currentUser");
+      setCurrentUser(raw ? JSON.parse(raw) : null);
+    } catch {
+      setCurrentUser(null);
+    }
+  }, []);
+
+  const loadConversations = () => {
+    if (!currentUser) return;
+    try {
+      const raw = localStorage.getItem(getConvoKey(String(currentUser.id)));
+      setConversations(raw ? JSON.parse(raw) : []);
+    } catch {
+      setConversations([]);
+    }
+  };
+
+  useEffect(() => {
+    loadConversations();
+  }, [currentUser]);
+
+  // WebSocket for online users
+  useEffect(() => {
+    const ws = new WebSocket(buildWsUrl());
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      try {
+        const raw = localStorage.getItem("currentUser");
+        if (raw) {
+          const u = JSON.parse(raw);
+          if (u?.id) ws.send(JSON.stringify({ type: "user:online", userId: u.id }));
+        }
+      } catch { /* ignore */ }
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.type === "users:online" && Array.isArray(payload.users)) {
+          setOnlineUsers(payload.users);
+        }
+      } catch { /* ignore */ }
+    };
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+    };
+  }, []);
 
   const filterBySearch = (users: OnlineUser[]) =>
     search ? users.filter((u) => u.name.toLowerCase().includes(search.toLowerCase())) : users;
 
+  // Build conversation users with merged online status
+  const conversationUsers: OnlineUser[] = conversations.map((c) => {
+    const online = onlineUsers.find((u) => u.id === c.userId);
+    return {
+      id: c.userId,
+      name: c.name,
+      avatar: c.avatar,
+      isOnline: online?.isOnline ?? false,
+      hasConversation: true,
+      lastMessage: c.lastMessage,
+      lastMessageTime: c.lastMessageTime,
+      unreadCount: c.unreadCount,
+      officeName: online?.officeName ?? null,
+      location: online?.location ?? null,
+    };
+  });
+
+  // Online users not already in conversations
+  const otherUsers = onlineUsers.filter(
+    (u) => u.isOnline && !conversations.some((c) => c.userId === u.id)
+  );
+
   const filteredConversations = filterBySearch(conversationUsers);
   const filteredOthers = filterBySearch(otherUsers);
+
+  const handleOpenChat = (user: OnlineUser) => {
+    // Clear unread count when opening chat
+    if (currentUser) {
+      try {
+        const key = getConvoKey(String(currentUser.id));
+        const convos: ConvoSummary[] = JSON.parse(localStorage.getItem(key) || "[]");
+        const idx = convos.findIndex((c) => c.userId === user.id);
+        if (idx >= 0 && convos[idx].unreadCount > 0) {
+          convos[idx].unreadCount = 0;
+          localStorage.setItem(key, JSON.stringify(convos));
+        }
+      } catch { /* ignore */ }
+    }
+    setChatUser(user);
+  };
+
+  const handleCloseChat = () => {
+    setChatUser(null);
+    loadConversations(); // Refresh conversation list after chat closes
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -46,7 +165,7 @@ const Messages = () => {
               {filteredConversations.map((user) => (
                 <button
                   key={user.id}
-                  onClick={() => setChatUser(user)}
+                  onClick={() => handleOpenChat(user)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left"
                 >
                   <div className="relative flex-shrink-0">
@@ -62,11 +181,11 @@ const Messages = () => {
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{user.lastMessage}</p>
                   </div>
-                  {user.unreadCount && user.unreadCount > 0 && (
+                  {user.unreadCount && user.unreadCount > 0 ? (
                     <span className="bg-primary text-primary-foreground text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0">
                       {user.unreadCount}
                     </span>
-                  )}
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -80,7 +199,7 @@ const Messages = () => {
               {filteredOthers.map((user) => (
                 <button
                   key={user.id}
-                  onClick={() => setChatUser(user)}
+                  onClick={() => handleOpenChat(user)}
                   className="w-full flex items-center gap-3 px-4 py-3 hover:bg-muted/50 transition-colors text-left"
                 >
                   <div className="relative flex-shrink-0">
@@ -101,12 +220,12 @@ const Messages = () => {
 
         {filteredConversations.length === 0 && filteredOthers.length === 0 && (
           <div className="text-center py-16 text-muted-foreground">
-            <p>Sonuç bulunamadı.</p>
+            <p>Çevrimiçi kullanıcı yok.</p>
           </div>
         )}
       </div>
 
-      {chatUser && <ChatDialog user={chatUser} onClose={() => setChatUser(null)} />}
+      {chatUser && <ChatDialog user={chatUser} onClose={handleCloseChat} />}
     </div>
   );
 };

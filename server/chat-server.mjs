@@ -310,6 +310,17 @@ wss.on("connection", (socket) => {
         broadcastListingsSnapshot();
       }
 
+      if (message.type === "chat:private") {
+        const { toId, fromId, fromName, text, time } = message;
+        if (!toId || !fromId || !text) return;
+        connectedSockets.forEach((userId, sock) => {
+          if (String(userId) === String(toId) && sock.readyState === sock.OPEN) {
+            sock.send(JSON.stringify({ type: "chat:private", fromId: String(fromId), fromName, text, time }));
+          }
+        });
+        return;
+      }
+
       if (message.type === "transaction:start") {
         if (!message.actorName || !message.listingId) return;
         // Find in standard or arbitrage listings
