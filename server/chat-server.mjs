@@ -48,6 +48,7 @@ const loadState = async () => {
 await loadState();
 
 const PORT = Number(process.env.CHAT_WS_PORT ?? 8787);
+const INACTIVE_LISTING_TIMEOUT_MS = 15 * 60 * 1000;
 
 const messages = [];
 
@@ -60,6 +61,7 @@ const wss = new WebSocketServer({ port: PORT });
 const connectedSockets = new Map();
 // Tracks users whose browser tab is currently visible/active
 const activeTabUserIds = new Set();
+const inactiveListingTimeouts = new Map();
 // Stores profile info for MySQL-auth users (not in local users array)
 const connectedUserProfiles = new Map(); // userId -> { name, officeName, location, role }
 
@@ -77,7 +79,8 @@ const annotateListings = (list) => {
   return list.map((l) => ({
     ...l,
     ownerOnline: l.ownerId ? onlineIds.has(l.ownerId) : false,
-    ownerTabActive: l.ownerId ? activeTabUserIds.has(l.ownerId) : false,
+    // Keep listings actionable for all clients even when owner tab is backgrounded.
+    ownerTabActive: true,
   }));
 };
 
@@ -129,6 +132,43 @@ const broadcastOnlineUsers = () => {
   broadcast({ type: "users:online", users: buildOnlineList() });
 };
 
+const clearInactiveListingTimeout = (userId) => {
+  const timeoutId = inactiveListingTimeouts.get(userId);
+  if (timeoutId) {
+    clearTimeout(timeoutId);
+    inactiveListingTimeouts.delete(userId);
+  }
+};
+
+const deleteListingsByOwner = (userId) => {
+  const deletedIds = [
+    ...standardListings.filter((listing) => listing.ownerId === userId).map((listing) => listing.id),
+    ...arbitrageListings.filter((listing) => listing.ownerId === userId).map((listing) => listing.id),
+  ];
+
+  if (deletedIds.length === 0) {
+    return;
+  }
+
+  standardListings = standardListings.filter((listing) => listing.ownerId !== userId);
+  arbitrageListings = arbitrageListings.filter((listing) => listing.ownerId !== userId);
+  deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
+  broadcastListingsSnapshot();
+};
+
+const scheduleInactiveListingExpiry = (userId) => {
+  if (!userId || inactiveListingTimeouts.has(userId)) {
+    return;
+  }
+
+  const timeoutId = setTimeout(() => {
+    inactiveListingTimeouts.delete(userId);
+    deleteListingsByOwner(userId);
+  }, INACTIVE_LISTING_TIMEOUT_MS);
+
+  inactiveListingTimeouts.set(userId, timeoutId);
+};
+
 wss.on("connection", (socket) => {
   socket.send(JSON.stringify({ type: "snapshot", messages, standardListings: annotateListings(standardListings), arbitrageListings: annotateListings(arbitrageListings) }));
 
@@ -139,19 +179,13 @@ wss.on("connection", (socket) => {
     const userId = connectedSockets.get(socket);
     connectedSockets.delete(socket);
     if (userId !== undefined) {
+      clearInactiveListingTimeout(userId);
       activeTabUserIds.delete(userId);
       // Remove from profiles if no other socket is using this userId
       const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
       if (!stillConnected) {
         connectedUserProfiles.delete(userId);
-        // Delete all listings owned by this user and notify clients
-        const deletedIds = [
-          ...standardListings.filter((l) => l.ownerId === userId).map((l) => l.id),
-          ...arbitrageListings.filter((l) => l.ownerId === userId).map((l) => l.id),
-        ];
-        standardListings = standardListings.filter((l) => l.ownerId !== userId);
-        arbitrageListings = arbitrageListings.filter((l) => l.ownerId !== userId);
-        deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
+        deleteListingsByOwner(userId);
       }
       broadcastOnlineUsers();
       broadcastListingsSnapshot();
@@ -191,6 +225,7 @@ wss.on("connection", (socket) => {
         const userId = Number(message.userId);
         if (userId) {
           connectedSockets.set(socket, userId);
+          clearInactiveListingTimeout(userId);
           // Store profile info for users not in the local WS users array
           if (!connectedUserProfiles.has(userId)) {
             connectedUserProfiles.set(userId, {
@@ -210,6 +245,7 @@ wss.on("connection", (socket) => {
         const userId = connectedSockets.get(socket);
         if (userId !== undefined) {
           activeTabUserIds.add(userId);
+          clearInactiveListingTimeout(userId);
           broadcastListingsSnapshot();
         }
         return;
@@ -219,6 +255,7 @@ wss.on("connection", (socket) => {
         const userId = connectedSockets.get(socket);
         if (userId !== undefined) {
           activeTabUserIds.delete(userId);
+          scheduleInactiveListingExpiry(userId);
           broadcastListingsSnapshot();
         }
         return;
@@ -230,6 +267,7 @@ wss.on("connection", (socket) => {
 
         connectedSockets.delete(socket);
         activeTabUserIds.delete(userId);
+        clearInactiveListingTimeout(userId);
 
         const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
         if (!stillConnected) {
@@ -237,13 +275,7 @@ wss.on("connection", (socket) => {
         }
 
         // Explicit logout must invalidate all listings of that user immediately.
-        const deletedIds = [
-          ...standardListings.filter((l) => l.ownerId === userId).map((l) => l.id),
-          ...arbitrageListings.filter((l) => l.ownerId === userId).map((l) => l.id),
-        ];
-        standardListings = standardListings.filter((l) => l.ownerId !== userId);
-        arbitrageListings = arbitrageListings.filter((l) => l.ownerId !== userId);
-        deletedIds.forEach((id) => broadcast({ type: "listing:deleted", id }));
+        deleteListingsByOwner(userId);
 
         broadcastOnlineUsers();
         broadcastListingsSnapshot();
