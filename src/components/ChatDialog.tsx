@@ -3,6 +3,7 @@ import { X, Send, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { OnlineUser } from "@/data/mockUsers";
+import { resolveWsUrl } from "@/lib/network";
 
 interface ChatMessage {
   id: string;
@@ -28,16 +29,6 @@ interface ChatDialogProps {
 
 const getMsgKey = (id1: string, id2: string) => `chat_msgs_${[id1, id2].sort().join("_")}`;
 const getConvoKey = (myId: string) => `doviz_convos_${myId}`;
-
-const buildWsUrl = () => {
-  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const configuredWsUrl = (import.meta.env.VITE_CHAT_WS_URL) as string | undefined;
-  const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
-  const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  return configuredWsUrl && (!isLocalWsUrl || isLocalHost)
-    ? configuredWsUrl
-    : `${wsProtocol}://${window.location.host}/ws`;
-};
 
 const updateConvoSummary = (myId: string, them: OnlineUser, lastMsg: string, time: string, addUnread: boolean) => {
   try {
@@ -86,7 +77,7 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
   // WebSocket for real-time private messages
   useEffect(() => {
     if (!myId) return;
-    const ws = new WebSocket(buildWsUrl());
+    const ws = new WebSocket(resolveWsUrl());
     wsRef.current = ws;
 
     ws.onopen = () => {
