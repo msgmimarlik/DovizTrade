@@ -495,7 +495,7 @@ const Index = () => {
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                              {listing.userName}{listing.ownerTabActive ? "" : listing.ownerOnline ? " 🟡" : ""}
+                              {listing.userName}
                             </span>
                           </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
