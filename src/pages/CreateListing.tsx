@@ -14,6 +14,7 @@ type CurrentUser = {
   name: string;
   email: string;
   location: string;
+  officeName?: string;
 };
 
 const CreateListing = () => {
@@ -104,6 +105,7 @@ const CreateListing = () => {
           amount: amountValue,
           rate: rateValue,
           total: `${(amountValue * rateValue).toLocaleString("tr-TR")} ${secondCurrency}`,
+          officeName: currentUser.officeName || null,
           userName: currentUser.name,
           location: currentUser.location,
           duration,
@@ -124,6 +126,7 @@ const CreateListing = () => {
           totalTL: Math.round(amountValue * rateValue),
           location: currentUser.location,
           duration,
+          officeName: currentUser.officeName || null,
           userName: currentUser.name,
           isDivisible,
           isBankTransfer,

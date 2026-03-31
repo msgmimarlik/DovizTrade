@@ -49,6 +49,7 @@ await loadState();
 
 const PORT = Number(process.env.CHAT_WS_PORT ?? 8787);
 const INACTIVE_LISTING_TIMEOUT_MS = 15 * 60 * 1000;
+const MAX_SESSIONS_PER_USER = 2;
 
 const messages = [];
 
@@ -59,6 +60,10 @@ const wss = new WebSocketServer({ port: PORT });
 
 // Track which users are currently connected: Map<socket, userId>
 const connectedSockets = new Map();
+// Track logical client session ids per socket: Map<socket, clientSessionId>
+const connectedClientSessions = new Map();
+// Track allocated session slots per user: Map<userId, Map<clientSessionId, slotNumber>>
+const userSessionSlots = new Map();
 // Tracks users whose browser tab is currently visible/active
 const activeTabUserIds = new Set();
 const inactiveListingTimeouts = new Map();
@@ -84,6 +89,60 @@ const annotateListings = (list) => {
   }));
 };
 
+const getSessionSlotMap = (userId) => {
+  let slotMap = userSessionSlots.get(userId);
+  if (!slotMap) {
+    slotMap = new Map();
+    userSessionSlots.set(userId, slotMap);
+  }
+  return slotMap;
+};
+
+const assignSessionSlot = (userId, clientSessionId) => {
+  const slotMap = getSessionSlotMap(userId);
+
+  if (slotMap.has(clientSessionId)) {
+    return slotMap.get(clientSessionId);
+  }
+
+  if (slotMap.size >= MAX_SESSIONS_PER_USER) {
+    return null;
+  }
+
+  const usedSlots = new Set(slotMap.values());
+  let slotNumber = 1;
+  while (usedSlots.has(slotNumber) && slotNumber <= MAX_SESSIONS_PER_USER) {
+    slotNumber += 1;
+  }
+
+  if (slotNumber > MAX_SESSIONS_PER_USER) {
+    return null;
+  }
+
+  slotMap.set(clientSessionId, slotNumber);
+  return slotNumber;
+};
+
+const releaseSessionSlotIfUnused = (userId, clientSessionId) => {
+  const stillUsed = [...connectedClientSessions.entries()].some(
+    ([sock, sessionId]) => connectedSockets.get(sock) === userId && sessionId === clientSessionId,
+  );
+
+  if (stillUsed) {
+    return;
+  }
+
+  const slotMap = userSessionSlots.get(userId);
+  if (!slotMap) {
+    return;
+  }
+
+  slotMap.delete(clientSessionId);
+  if (slotMap.size === 0) {
+    userSessionSlots.delete(userId);
+  }
+};
+
 const broadcastListingsSnapshot = () => {
   broadcast({
     type: "listings:snapshot",
@@ -97,32 +156,51 @@ const buildOnlineList = () => {
 
   // Start with users known to the WS server (non-admin, active)
   const wsUserIds = new Set();
-  const list = users
+  const list = [];
+
+  const pushUserRows = (userId, displayName, officeName, location, isOnline) => {
+    const slotMap = userSessionSlots.get(userId);
+    const baseName = officeName || displayName || String(userId);
+
+    if (isOnline && slotMap && slotMap.size > 0) {
+      const orderedSlots = [...slotMap.values()].sort((a, b) => a - b);
+      orderedSlots.forEach((slotNumber) => {
+        const nameWithSlot = `${baseName} ${slotNumber}`;
+        list.push({
+          id: `${userId}:${slotNumber}`,
+          name: nameWithSlot,
+          avatar: nameWithSlot.split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+          isOnline: true,
+          officeName: officeName || null,
+          location: location || null,
+        });
+      });
+      return;
+    }
+
+    const fallbackName = baseName;
+    list.push({
+      id: String(userId),
+      name: fallbackName,
+      avatar: fallbackName.split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+      isOnline,
+      officeName: officeName || null,
+      location: location || null,
+    });
+  };
+
+  users
     .filter((u) => u.isActive && u.role !== "admin")
-    .map((u) => {
+    .forEach((u) => {
       wsUserIds.add(u.id);
-      return {
-        id: String(u.id),
-        name: u.name || u.username,
-        avatar: (u.name || u.username || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
-        isOnline: onlineIds.has(u.id),
-        officeName: u.officeName || null,
-        location: u.location || null,
-      };
+      pushUserRows(u.id, u.name || u.username, u.officeName, u.location, onlineIds.has(u.id));
     });
 
   // Add MySQL-auth users that are connected but not in WS users array
   for (const [userId, profile] of connectedUserProfiles.entries()) {
     if (wsUserIds.has(userId)) continue; // already included above
     if (profile.role === "admin") continue;
-    list.push({
-      id: String(userId),
-      name: profile.name || String(userId),
-      avatar: (profile.name || "?").split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
-      isOnline: onlineIds.has(userId),
-      officeName: profile.officeName || null,
-      location: profile.location || null,
-    });
+    pushUserRows(userId, profile.name || String(userId), profile.officeName, profile.location, onlineIds.has(userId));
   }
 
   return list;
@@ -177,9 +255,14 @@ wss.on("connection", (socket) => {
 
   socket.on("close", () => {
     const userId = connectedSockets.get(socket);
+    const clientSessionId = connectedClientSessions.get(socket);
     connectedSockets.delete(socket);
+    connectedClientSessions.delete(socket);
     if (userId !== undefined) {
       activeTabUserIds.delete(userId);
+      if (clientSessionId) {
+        releaseSessionSlotIfUnused(userId, clientSessionId);
+      }
       // Remove from profiles if no other socket is using this userId
       const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
       if (!stillConnected) {
@@ -223,8 +306,17 @@ wss.on("connection", (socket) => {
         // Called by frontend when a user restores session from localStorage
         // Accept any numeric userId — auth is handled by the REST API (MySQL)
         const userId = Number(message.userId);
+        const clientSessionId = String(message.clientSessionId || "").trim() || `anon-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         if (userId) {
+          const slot = assignSessionSlot(userId, clientSessionId);
+          if (slot === null) {
+            socket.send(JSON.stringify({ type: "user:online:rejected", error: "Kullanici zaten bagli." }));
+            socket.close();
+            return;
+          }
+
           connectedSockets.set(socket, userId);
+          connectedClientSessions.set(socket, clientSessionId);
           clearInactiveListingTimeout(userId);
           // Store profile info for users not in the local WS users array
           if (!connectedUserProfiles.has(userId)) {
@@ -265,17 +357,22 @@ wss.on("connection", (socket) => {
         const userId = Number(message.userId);
         if (!userId) return;
 
+        const clientSessionId = connectedClientSessions.get(socket);
         connectedSockets.delete(socket);
+        connectedClientSessions.delete(socket);
         activeTabUserIds.delete(userId);
-        clearInactiveListingTimeout(userId);
+        if (clientSessionId) {
+          releaseSessionSlotIfUnused(userId, clientSessionId);
+        }
 
         const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
         if (!stillConnected) {
           connectedUserProfiles.delete(userId);
+          // On explicit logout, do not remove listings immediately.
+          // Start inactivity expiry timer so listings are removed after 15 minutes.
+          clearInactiveListingTimeout(userId);
+          scheduleInactiveListingExpiry(userId);
         }
-
-        // Explicit logout must invalidate all listings of that user immediately.
-        deleteListingsByOwner(userId);
 
         broadcastOnlineUsers();
         broadcastListingsSnapshot();

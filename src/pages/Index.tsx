@@ -71,6 +71,40 @@ const INACTIVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 dakika
 const sanitizeDisplayName = (name?: string) =>
   (name || "").replace(/[•●🟡]/g, "").replace(/\s+/g, " ").trim();
 
+const getCurrencyIcon = (currency?: string) => {
+  const map: Record<string, string> = {
+    TRY: "🇹🇷",
+    USD: "🇺🇸",
+    EUR: "🇪🇺",
+    GBP: "🇬🇧",
+    USDT: "🪙",
+    GAU: "🥇",
+  };
+
+  if (!currency) return "";
+  if (currency.includes("/")) {
+    const [base, quote] = currency.split("/").map((c) => c.trim().toUpperCase());
+    const baseIcon = map[base] || "";
+    const quoteIcon = map[quote] || "";
+    return `${baseIcon}${baseIcon && quoteIcon ? "/" : ""}${quoteIcon}`;
+  }
+
+  return map[currency.toUpperCase()] || "";
+};
+
+const getListingDisplayName = (listing: { officeName?: string; userName?: string }) => {
+  const officeName = sanitizeDisplayName(listing.officeName);
+  if (officeName) return officeName;
+  return sanitizeDisplayName(listing.userName);
+};
+
+const getDistrictOnly = (location?: string) => {
+  if (!location) return "";
+  const parts = location.split("/").map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return "";
+  return parts[parts.length - 1];
+};
+
 const Index = () => {
   const navigate = useNavigate();
   const [chatUser, setChatUser] = useState<OnlineUser | null>(null);
@@ -127,10 +161,16 @@ const Index = () => {
         const rawUser = sessionStorage.getItem("currentUser");
         if (rawUser) {
           const u = JSON.parse(rawUser);
+          let clientSessionId = sessionStorage.getItem("clientSessionId");
+          if (!clientSessionId) {
+            clientSessionId = `${u?.id || "user"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            sessionStorage.setItem("clientSessionId", clientSessionId);
+          }
           if (u?.id) {
             ws.send(JSON.stringify({
               type: "user:online",
               userId: u.id,
+              clientSessionId,
               name: u.name || u.fullName || u.username || String(u.id),
               officeName: u.officeName || null,
               location: u.location || null,
@@ -158,7 +198,17 @@ const Index = () => {
           | { type: "listing:created"; listing: any }
           | { type: "listing:deleted"; id: number }
           | { type: "users:online"; users: OnlineUser[] }
+          | { type: "user:online:rejected"; error?: string }
           | TransactionStartedPayload;
+
+        if (payload.type === "user:online:rejected") {
+          toast.error(payload.error || "Kullanici zaten bagli.");
+          sessionStorage.removeItem("currentUser");
+          sessionStorage.removeItem("clientSessionId");
+          setCurrentUser(null);
+          navigate("/login");
+          return;
+        }
 
         if (payload.type === "snapshot") {
           if (payload.standardListings) setStandardListings(payload.standardListings);
@@ -373,17 +423,17 @@ const Index = () => {
                   <tbody>
                     {buyListings.map((listing) => (
                       <tr key={listing.id} className="border-b bg-green-100 dark:bg-[#233a2c] transition-colors">
-                        <td className="px-2 py-1 border">{listing.currencyFlag} {listing.currency}</td>
+                        <td className="px-2 py-1 border">{listing.currencyFlag || getCurrencyIcon(listing.currency)} {listing.currency}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                              {sanitizeDisplayName(listing.userName)}
+                              {getListingDisplayName(listing)}
                             </span>
                           </td>
-                          <td className="px-2 py-1 border">{listing.location}</td>
+                          <td className="px-2 py-1 border">{getDistrictOnly(listing.location)}</td>
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
@@ -427,17 +477,17 @@ const Index = () => {
                   <tbody>
                     {sellListings.map((listing) => (
                       <tr key={listing.id} className="border-b bg-red-100 dark:bg-[#8B0000] transition-colors">
-                        <td className="px-2 py-1 border">{listing.currencyFlag} {listing.currency}</td>
+                        <td className="px-2 py-1 border">{listing.currencyFlag || getCurrencyIcon(listing.currency)} {listing.currency}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                              {sanitizeDisplayName(listing.userName)}
+                              {getListingDisplayName(listing)}
                             </span>
                           </td>
-                          <td className="px-2 py-1 border">{listing.location}</td>
+                          <td className="px-2 py-1 border">{getDistrictOnly(listing.location)}</td>
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
@@ -481,17 +531,17 @@ const Index = () => {
                   <tbody>
                     {sortedArbitrageListings.map((listing) => (
                       <tr key={listing.id} className="border-b bg-sky-100 dark:bg-[#1a3340] transition-colors">
-                        <td className="px-2 py-1 border">{listing.currencyFlag} {listing.currency}</td>
+                        <td className="px-2 py-1 border">{listing.currencyFlag || getCurrencyIcon(listing.currency)} {listing.currency}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate}</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                         <td className="px-2 py-1 border">
                           <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                            {sanitizeDisplayName(listing.userName)}
+                            {getListingDisplayName(listing)}
                           </span>
                         </td>
-                        <td className="px-2 py-1 border">{listing.location}</td>
+                        <td className="px-2 py-1 border">{getDistrictOnly(listing.location)}</td>
                         <td className="px-2 py-1 border">{listing.duration}</td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
@@ -592,7 +642,7 @@ const Index = () => {
             <div className="space-y-4">
               <div className="rounded-lg border border-border bg-muted/30 p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  <p><strong>Doviz:</strong> {selectedListing.currencyFlag} {selectedListing.currency}</p>
+                  <p><strong>Doviz:</strong> {selectedListing.currencyFlag || getCurrencyIcon(selectedListing.currency)} {selectedListing.currency}</p>
                   <p><strong>Kullanici:</strong> {selectedListing.userName}</p>
                   <p><strong>Miktar:</strong> {selectedListing.amount}</p>
                   <p><strong>Kur:</strong> {selectedListing.rate}</p>
