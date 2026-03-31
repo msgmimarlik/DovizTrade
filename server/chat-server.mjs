@@ -179,13 +179,13 @@ wss.on("connection", (socket) => {
     const userId = connectedSockets.get(socket);
     connectedSockets.delete(socket);
     if (userId !== undefined) {
-      clearInactiveListingTimeout(userId);
       activeTabUserIds.delete(userId);
       // Remove from profiles if no other socket is using this userId
       const stillConnected = [...connectedSockets.values()].some((id) => id === userId);
       if (!stillConnected) {
-        connectedUserProfiles.delete(userId);
-        deleteListingsByOwner(userId);
+        // Do not remove listings immediately on transient disconnects (refresh/navigation).
+        // Start the same 15-minute inactivity timeout used for background tabs.
+        scheduleInactiveListingExpiry(userId);
       }
       broadcastOnlineUsers();
       broadcastListingsSnapshot();
