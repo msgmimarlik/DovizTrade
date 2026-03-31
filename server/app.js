@@ -24,11 +24,16 @@ app.use(cors({
 }));
 app.use(bodyParser.json());
 
-const db = mysql.createConnection({
+const db = mysql.createPool({
   host: 'localhost',
   user: 'root',
   password: 'secmen-17Murat',
-  database: 'doviztrader'
+  database: 'doviztrader',
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
 });
 
 const dbp = db.promise();
@@ -126,16 +131,19 @@ const ensureAdminUser = async () => {
   );
 };
 
-db.connect((err) => {
-  if (err) throw err;
-  console.log('MySQL baglantisi basarili!');
-  ensureUsersTable()
-    .then(() => ensureAdminUser())
-    .then(() => console.log('Auth schema hazir.'))
-    .catch((schemaErr) => {
-      console.error('Auth schema hazirlama hatasi:', schemaErr.message);
-    });
-});
+const initializeAuthSchema = async () => {
+  try {
+    await query('SELECT 1');
+    console.log('MySQL baglantisi basarili!');
+    await ensureUsersTable();
+    await ensureAdminUser();
+    console.log('Auth schema hazir.');
+  } catch (schemaErr) {
+    console.error('Auth schema hazirlama hatasi:', schemaErr.message);
+  }
+};
+
+initializeAuthSchema();
 
 app.post('/api/auth/register', async (req, res) => {
   const {
