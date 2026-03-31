@@ -435,7 +435,7 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : "bg-yellow-400"}`} title={listing.ownerTabActive ? "Aktif" : "Bağlı (arka planda)"} />
+                              {/* Durum noktası kaldırıldı */}
                               {listing.userName}
                             </span>
                           </td>
@@ -494,7 +494,7 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : "bg-yellow-400"}`} title={listing.ownerTabActive ? "Aktif" : "Bağlı (arka planda)"} />
+                              {/* Durum noktası kaldırıldı */}
                               {listing.userName}{listing.ownerTabActive ? "" : listing.ownerOnline ? " 🟡" : ""}
                             </span>
                           </td>
@@ -553,7 +553,7 @@ const Index = () => {
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                         <td className="px-2 py-1 border">
                           <span className="flex items-center gap-1.5">
-                            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${listing.ownerTabActive ? "bg-green-500" : "bg-yellow-400"}`} title={listing.ownerTabActive ? "Aktif" : "Bağlı (arka planda)"} />
+                              {/* Durum noktası kaldırıldı */}
                             {listing.userName}
                           </span>
                         </td>
@@ -567,7 +567,7 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <button
                               className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                              disabled={Boolean(listing.ownerOnline && !listing.ownerTabActive)}
+                              // ...buton her zaman aktif olacak
                               onClick={() => handleStartTransaction(listing)}
                             >
                               İşlem Yap
