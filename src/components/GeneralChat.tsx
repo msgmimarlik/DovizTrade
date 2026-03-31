@@ -3,6 +3,7 @@ import { Send, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { resolveWsUrl } from "@/lib/network";
 
 interface GeneralChatMessage {
   id: string;
@@ -64,44 +65,62 @@ const GeneralChat = () => {
   }, []);
 
   useEffect(() => {
-    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const configuredWsUrl = import.meta.env.VITE_CHAT_WS_URL;
-    const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
-    const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    const wsUrl = configuredWsUrl && (!isLocalWsUrl || isLocalHost)
-      ? configuredWsUrl
-      : `${wsProtocol}://${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
-    wsRef.current = ws;
+    let reconnectTimer: number | null = null;
+    let isDisposed = false;
 
-    ws.onopen = () => setIsConnected(true);
-    ws.onclose = () => setIsConnected(false);
-    ws.onerror = () => {
-      setIsConnected(false);
-    };
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data) as
-          | { type: "snapshot"; messages: GeneralChatMessage[] }
-          | { type: "new"; message: GeneralChatMessage }
-          | { type: "deleted"; id: string };
+    const connect = () => {
+      const ws = new WebSocket(resolveWsUrl());
+      wsRef.current = ws;
 
-        if (payload.type === "snapshot") {
-          setMessages(payload.messages);
+      ws.onopen = () => {
+        setIsConnected(true);
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        wsRef.current = null;
+
+        if (!isDisposed) {
+          reconnectTimer = window.setTimeout(connect, 2000);
         }
-        if (payload.type === "new") {
-          setMessages((prev) => [...prev, payload.message]);
+      };
+
+      ws.onerror = () => {
+        setIsConnected(false);
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as
+            | { type: "snapshot"; messages: GeneralChatMessage[] }
+            | { type: "new"; message: GeneralChatMessage }
+            | { type: "deleted"; id: string };
+
+          if (payload.type === "snapshot") {
+            setMessages(payload.messages);
+          }
+          if (payload.type === "new") {
+            setMessages((prev) => [...prev, payload.message]);
+          }
+          if (payload.type === "deleted") {
+            setMessages((prev) => prev.filter((msg) => msg.id !== payload.id));
+          }
+        } catch {
+          // Ignore malformed payload.
         }
-        if (payload.type === "deleted") {
-          setMessages((prev) => prev.filter((msg) => msg.id !== payload.id));
-        }
-      } catch {
-        // Ignore malformed payload.
-      }
+      };
     };
+
+    connect();
 
     return () => {
-      ws.close();
+      isDisposed = true;
+      if (reconnectTimer) {
+        window.clearTimeout(reconnectTimer);
+      }
+      wsRef.current?.close();
+      wsRef.current = null;
     };
   }, []);
 

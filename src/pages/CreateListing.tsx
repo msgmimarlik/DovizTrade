@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { resolveWsUrl } from "@/lib/network";
 
 type CurrentUser = {
   id: number;
@@ -85,14 +86,7 @@ const CreateListing = () => {
     const amountValue = Number(amount);
     const rateValue = Number(rate);
 
-    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const configuredWsUrl = import.meta.env.VITE_CHAT_WS_URL;
-    const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
-    const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    const wsUrl = configuredWsUrl && (!isLocalWsUrl || isLocalHost)
-      ? configuredWsUrl
-      : `${wsProtocol}://${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(resolveWsUrl());
 
     ws.onopen = () => {
       if (isArbitrageListing) {

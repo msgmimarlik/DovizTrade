@@ -20,6 +20,7 @@ import { type OnlineUser } from "@/data/mockUsers";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import { toast } from "sonner";
+import { resolveWsUrl } from "@/lib/network";
 
 const mockListings: any[] = [];
 const mockArbitrageListings: any[] = [];
@@ -145,14 +146,7 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const configuredWsUrl = import.meta.env.VITE_CHAT_WS_URL;
-    const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
-    const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-    const wsUrl = configuredWsUrl && (!isLocalWsUrl || isLocalHost)
-      ? configuredWsUrl
-      : `${wsProtocol}://${window.location.host}/ws`;
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(resolveWsUrl());
     listingsWsRef.current = ws;
 
     ws.onopen = () => {

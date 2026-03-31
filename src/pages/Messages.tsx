@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useState, useEffect, useRef } from "react";
 import type { OnlineUser } from "@/data/mockUsers";
 import ChatDialog from "@/components/ChatDialog";
+import { resolveWsUrl } from "@/lib/network";
 
 interface ConvoSummary {
   userId: string;
@@ -16,16 +17,6 @@ interface ConvoSummary {
 }
 
 const getConvoKey = (myId: string) => `doviz_convos_${myId}`;
-
-const buildWsUrl = () => {
-  const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
-  const configuredWsUrl = (import.meta.env.VITE_CHAT_WS_URL) as string | undefined;
-  const isLocalWsUrl = configuredWsUrl?.includes("localhost") || configuredWsUrl?.includes("127.0.0.1");
-  const isLocalHost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  return configuredWsUrl && (!isLocalWsUrl || isLocalHost)
-    ? configuredWsUrl
-    : `${wsProtocol}://${window.location.host}/ws`;
-};
 
 const Messages = () => {
   const navigate = useNavigate();
@@ -62,7 +53,7 @@ const Messages = () => {
 
   // WebSocket for online users
   useEffect(() => {
-    const ws = new WebSocket(buildWsUrl());
+    const ws = new WebSocket(resolveWsUrl());
     wsRef.current = ws;
 
     ws.onopen = () => {

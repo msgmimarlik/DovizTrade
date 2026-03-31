@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { apiUrl } from "@/lib/api";
+import { apiRequest } from "@/lib/network";
 
 type StoredUser = {
   id: number;
@@ -70,7 +70,7 @@ const Login = () => {
 
     if (isLogin) {
       try {
-        const response = await fetch(apiUrl("/api/auth/login"), {
+        const response = await apiRequest("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email, password }),
@@ -119,7 +119,7 @@ const Login = () => {
     }
 
     try {
-      const response = await fetch(apiUrl("/api/auth/register"), {
+      const response = await apiRequest("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
