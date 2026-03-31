@@ -5,11 +5,20 @@ import bcrypt from 'bcrypt';
 import cors from 'cors';
 
 const app = express();
+const allowedOrigins = [
+  'https://doviztrade.com',
+  'https://www.doviztrade.com',
+  'https://sea-lion-app-2w4d4.ondigitalocean.app',
+];
+
 app.use(cors({
-  origin: [
-    'https://doviztrade.com',
-    'https://www.doviztrade.com',
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
