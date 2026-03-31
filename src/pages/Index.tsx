@@ -47,17 +47,43 @@ const sortByCurrencyAndRate = <T extends { currency: string; rate: number }>(
   });
 };
 
+type CurrentUser = {
+  id: number;
+  name?: string;
+  role?: "admin" | "user";
+  email?: string;
+  officeName?: string;
+  location?: string;
+};
+
+type TransactionStartedPayload = {
+  type: "transaction:started";
+  actorName: string;
+  listingId: number;
+  listingLabel?: string;
+  ownerName?: string;
+  transactionAmount?: number;
+  actorInfo?: any;
+};
+
+const INACTIVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 dakika
+
 const Index = () => {
   const navigate = useNavigate();
   const [chatUser, setChatUser] = useState<OnlineUser | null>(null);
-  const [currentUser, setCurrentUser] = useState<{ id: number; name?: string; role?: "admin" | "user" } | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [standardListings, setStandardListings] = useState<any[]>(mockListings);
   const [arbitrageListings, setArbitrageListings] = useState<any[]>(mockArbitrageListings);
   const [selectedListing, setSelectedListing] = useState<any | null>(null);
   const [transactionAmount, setTransactionAmount] = useState<string>("");
   const [transactionModal, setTransactionModal] = useState<null | { actorName: string; actorInfo?: any; listingId: number; listingLabel?: string; transactionAmount?: any }>(null);
+  const [transactionMessage, setTransactionMessage] = useState<string>("");
   const listingsWsRef = useRef<WebSocket | null>(null);
+  // Her ilan için kalan süreyi tutan state
+  const [listingCountdowns, setListingCountdowns] = useState<{ [listingId: number]: number }>({});
+  // Timer referansı
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     try {
@@ -119,9 +145,48 @@ const Index = () => {
       }
     };
 
+
+    // Geri sayım başlat/durdur mantığı
+    const startCountdowns = () => {
+      // Her ilan için kalan süreyi başlat
+      setListingCountdowns((prev) => {
+        const now = Date.now();
+        const updated: { [listingId: number]: number } = {};
+        [...standardListings, ...arbitrageListings].forEach((listing) => {
+          // Eğer zaten başlatılmışsa, mevcut kalan süreyi koru
+          updated[listing.id] = prev[listing.id] ?? INACTIVE_TIMEOUT_MS;
+        });
+        return updated;
+      });
+      if (!countdownIntervalRef.current) {
+        countdownIntervalRef.current = setInterval(() => {
+          setListingCountdowns((prev) => {
+            const updated: { [listingId: number]: number } = {};
+            Object.entries(prev).forEach(([id, ms]) => {
+              updated[Number(id)] = ms - 1000;
+            });
+            return updated;
+          });
+        }, 1000);
+      }
+    };
+
+    const stopCountdowns = () => {
+      setListingCountdowns({});
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+    };
+
     const handleVisibility = () => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
+      }
+      if (document.hidden) {
+        startCountdowns();
+      } else {
+        stopCountdowns();
       }
     };
     document.addEventListener("visibilitychange", handleVisibility);
@@ -134,7 +199,7 @@ const Index = () => {
           | { type: "listing:created"; listing: any }
           | { type: "listing:deleted"; id: number }
           | { type: "users:online"; users: OnlineUser[] }
-          | { type: "transaction:started"; actorName: string; listingId: number; listingLabel?: string; ownerName?: string };
+          | TransactionStartedPayload;
 
         if (payload.type === "snapshot") {
           if (payload.standardListings) setStandardListings(payload.standardListings);
@@ -187,9 +252,24 @@ const Index = () => {
 
     return () => {
       document.removeEventListener("visibilitychange", handleVisibility);
+      stopCountdowns();
       listingsWsRef.current = null;
       ws.close();
     };
+    // Geri sayım tamamlandığında ilanı kaldır
+    useEffect(() => {
+      Object.entries(listingCountdowns).forEach(([id, ms]) => {
+        if (ms <= 0) {
+          // İlanı otomatik kaldır
+          handleDeleteListing(Number(id));
+          setListingCountdowns((prev) => {
+            const updated = { ...prev };
+            delete updated[id];
+            return updated;
+          });
+        }
+      });
+    }, [listingCountdowns]);
   }, []);
 
   const sellListings = sortByCurrencyAndRate(standardListings.filter((l) => l.type === "sell"), "asc");
@@ -264,10 +344,10 @@ const Index = () => {
         listingLabel,
         transactionAmount: finalAmount,
         actorInfo: {
-          email: currentUser.email,
-          officeName: currentUser.officeName,
+          email: currentUser.email || null,
+          officeName: currentUser.officeName || null,
           role: currentUser.role,
-          location: currentUser.location,
+          location: currentUser.location || null,
         },
       }),
     );
@@ -360,7 +440,11 @@ const Index = () => {
                             </span>
                           </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
-                        <td className="px-2 py-1 border">{listing.duration}</td>
+                        <td className="px-2 py-1 border">
+                          {listingCountdowns[listing.id] !== undefined && document.hidden
+                            ? `${Math.floor(listingCountdowns[listing.id] / 60000)}:${String(Math.floor((listingCountdowns[listing.id] % 60000) / 1000)).padStart(2, "0")}`
+                            : listing.duration}
+                        </td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
                             <button
@@ -415,7 +499,11 @@ const Index = () => {
                             </span>
                           </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
-                        <td className="px-2 py-1 border">{listing.duration}</td>
+                        <td className="px-2 py-1 border">
+                          {listingCountdowns[listing.id] !== undefined && document.hidden
+                            ? `${Math.floor(listingCountdowns[listing.id] / 60000)}:${String(Math.floor((listingCountdowns[listing.id] % 60000) / 1000)).padStart(2, "0")}`
+                            : listing.duration}
+                        </td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
                             <button
@@ -470,7 +558,11 @@ const Index = () => {
                           </span>
                         </td>
                         <td className="px-2 py-1 border">{listing.location}</td>
-                        <td className="px-2 py-1 border">{listing.duration}</td>
+                        <td className="px-2 py-1 border">
+                          {listingCountdowns[listing.id] !== undefined && document.hidden
+                            ? `${Math.floor(listingCountdowns[listing.id] / 60000)}:${String(Math.floor((listingCountdowns[listing.id] % 60000) / 1000)).padStart(2, "0")}`
+                            : listing.duration}
+                        </td>
                         <td className="px-2 py-1 border">
                           <div className="flex items-center gap-2">
                             <button
