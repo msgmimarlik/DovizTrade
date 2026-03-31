@@ -12,6 +12,11 @@ export default defineConfig(({ mode }) => ({
       overlay: false,
     },
   },
+  preview: {
+    host: "0.0.0.0",
+    port: 8080,
+    allowedHosts: "all",
+  },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
