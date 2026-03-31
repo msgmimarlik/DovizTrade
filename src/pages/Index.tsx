@@ -68,6 +68,9 @@ type TransactionStartedPayload = {
 
 const INACTIVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 dakika
 
+const sanitizeDisplayName = (name?: string) =>
+  (name || "").replace(/[•●🟡]/g, "").replace(/\s+/g, " ").trim();
+
 const Index = () => {
   const navigate = useNavigate();
   const [chatUser, setChatUser] = useState<OnlineUser | null>(null);
@@ -436,7 +439,7 @@ const Index = () => {
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                              {listing.userName?.replace(/[●🟡]/g, "")}
+                              {sanitizeDisplayName(listing.userName)}
                             </span>
                           </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
@@ -449,7 +452,6 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <button
                               className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                              disabled={Boolean(listing.ownerOnline && !listing.ownerTabActive)}
                               onClick={() => handleStartTransaction(listing)}
                             >
                               İşlem Yap
@@ -495,7 +497,7 @@ const Index = () => {
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                              {listing.userName}
+                              {sanitizeDisplayName(listing.userName)}
                             </span>
                           </td>
                           <td className="px-2 py-1 border">{listing.location}</td>
@@ -508,7 +510,6 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <button
                               className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                              disabled={Boolean(listing.ownerOnline && !listing.ownerTabActive)}
                               onClick={() => handleStartTransaction(listing)}
                             >
                               İşlem Yap
@@ -554,7 +555,7 @@ const Index = () => {
                         <td className="px-2 py-1 border">
                           <span className="flex items-center gap-1.5">
                               {/* Durum noktası kaldırıldı */}
-                            {listing.userName}
+                            {sanitizeDisplayName(listing.userName)}
                           </span>
                         </td>
                         <td className="px-2 py-1 border">{listing.location}</td>
