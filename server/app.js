@@ -3,8 +3,14 @@ import mysql from 'mysql2';
 import bodyParser from 'body-parser';
 import bcrypt from 'bcrypt';
 import cors from 'cors';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const chatArchivePath = path.join(__dirname, 'chat-archive.json');
 const allowedOrigins = [
   'https://doviztrade.com',
   'https://www.doviztrade.com',
@@ -41,6 +47,19 @@ const dbp = db.promise();
 const query = async (sql, params = []) => {
   const [rows] = await dbp.query(sql, params);
   return rows;
+};
+
+const readChatArchive = async () => {
+  try {
+    const raw = await fs.readFile(chatArchivePath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    return {
+      general: Array.isArray(parsed.general) ? parsed.general : [],
+      private: Array.isArray(parsed.private) ? parsed.private : [],
+    };
+  } catch {
+    return { general: [], private: [] };
+  }
 };
 
 const PROFILE_UPDATABLE_FIELDS = [
@@ -472,6 +491,38 @@ app.get('/api/admin/profile-update-requests', async (req, res) => {
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/chat-archive', async (req, res) => {
+  const adminUserId = Number(req.query.adminUserId || 0);
+  const requestedDays = Number(req.query.days || 7);
+  const days = Number.isFinite(requestedDays) ? Math.min(7, Math.max(1, requestedDays)) : 7;
+
+  if (!adminUserId) {
+    return res.status(400).json({ error: 'Gecersiz yonetici bilgisi.' });
+  }
+
+  try {
+    const admins = await query('SELECT id, role FROM users WHERE id = ? LIMIT 1', [adminUserId]);
+    if (admins.length === 0 || admins[0].role !== 'admin') {
+      return res.status(403).json({ error: 'Bu islem icin yonetici yetkisi gerekli.' });
+    }
+
+    const archive = await readChatArchive();
+    const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+    const filterByDate = (item) => {
+      const ms = new Date(item?.sentAt).getTime();
+      return Number.isFinite(ms) && ms >= cutoff;
+    };
+
+    return res.json({
+      days,
+      general: archive.general.filter(filterByDate),
+      private: archive.private.filter(filterByDate),
+    });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

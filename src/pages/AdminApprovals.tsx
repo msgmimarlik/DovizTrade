@@ -1,6 +1,6 @@
 import { ArrowLeft, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { apiUrl } from "@/lib/api";
@@ -50,6 +50,23 @@ type PendingProfileUpdate = {
   changes: ProfileUpdateChange[];
 };
 
+type AdminGeneralChatLog = {
+  id: string;
+  userId: number | null;
+  userName: string;
+  text: string;
+  sentAt: string;
+};
+
+type AdminPrivateChatLog = {
+  id: string;
+  fromId: string;
+  toId: string;
+  fromName: string | null;
+  text: string;
+  sentAt: string;
+};
+
 const PROFILE_FIELD_LABELS: Record<string, string> = {
   full_name: "Yetkili",
   office_name: "Buro Adi",
@@ -65,29 +82,90 @@ const AdminApprovals = () => {
   const [pending, setPending] = useState<PendingRegistration[]>([]);
   const [pendingProfileUpdates, setPendingProfileUpdates] = useState<PendingProfileUpdate[]>([]);
   const [users, setUsers] = useState<StoredUser[]>([]);
+  const [generalChatLogs, setGeneralChatLogs] = useState<AdminGeneralChatLog[]>([]);
+  const [privateChatLogs, setPrivateChatLogs] = useState<AdminPrivateChatLog[]>([]);
+  const [chatSearch, setChatSearch] = useState("");
+  const [chatUserFilter, setChatUserFilter] = useState("all");
+  const [chatDateFilter, setChatDateFilter] = useState<"all" | "today" | "3days" | "7days">("7days");
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
 
-  const loadAdminData = async () => {
+  const selectedUserMatches = (value: string) => chatUserFilter === "all" || value === chatUserFilter;
+
+  const dateMatches = (sentAt: string) => {
+    if (chatDateFilter === "all") return true;
+
+    const sentDate = new Date(sentAt);
+    const now = new Date();
+
+    if (chatDateFilter === "today") {
+      return sentDate.toDateString() === now.toDateString();
+    }
+
+    const days = chatDateFilter === "3days" ? 3 : 7;
+    const threshold = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+    return sentDate >= threshold;
+  };
+
+  const normalizedSearch = chatSearch.trim().toLowerCase();
+
+  const filteredGeneralChatLogs = useMemo(() => {
+    return generalChatLogs.filter((item) => {
+      if (!dateMatches(item.sentAt)) return false;
+      if (!selectedUserMatches(item.userName || "Kullanici")) return false;
+      if (!normalizedSearch) return true;
+
+      const haystack = `${item.userName || ""} ${item.text || ""}`.toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [generalChatLogs, chatDateFilter, chatUserFilter, normalizedSearch]);
+
+  const filteredPrivateChatLogs = useMemo(() => {
+    return privateChatLogs.filter((item) => {
+      if (!dateMatches(item.sentAt)) return false;
+      if (!selectedUserMatches(item.fromName || item.fromId)) return false;
+      if (!normalizedSearch) return true;
+
+      const haystack = `${item.fromName || ""} ${item.fromId || ""} ${item.toId || ""} ${item.text || ""}`.toLowerCase();
+      return haystack.includes(normalizedSearch);
+    });
+  }, [privateChatLogs, chatDateFilter, chatUserFilter, normalizedSearch]);
+
+  const chatUsers = useMemo(() => {
+    const names = new Set<string>();
+    generalChatLogs.forEach((item) => names.add(item.userName || "Kullanici"));
+    privateChatLogs.forEach((item) => names.add(item.fromName || item.fromId));
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "tr"));
+  }, [generalChatLogs, privateChatLogs]);
+
+  const loadAdminData = async (adminUserId?: number) => {
+    const resolvedAdminId = Number(adminUserId || currentUser?.id || 0);
+
     try {
-      const [pendingRes, usersRes, pendingProfileRes] = await Promise.all([
+      const [pendingRes, usersRes, pendingProfileRes, chatArchiveRes] = await Promise.all([
         fetch(apiUrl("/api/admin/pending-users")),
         fetch(apiUrl("/api/admin/users")),
         fetch(apiUrl("/api/admin/profile-update-requests")),
+        resolvedAdminId
+          ? fetch(apiUrl(`/api/admin/chat-archive?adminUserId=${resolvedAdminId}&days=7`))
+          : Promise.resolve(new Response(JSON.stringify({ general: [], private: [] }), { status: 200 })),
       ]);
 
-      if (!pendingRes.ok || !usersRes.ok || !pendingProfileRes.ok) {
+      if (!pendingRes.ok || !usersRes.ok || !pendingProfileRes.ok || !chatArchiveRes.ok) {
         toast.error("Yonetici verileri alinamadi.");
         return;
       }
 
-      const [pendingData, usersData, profileUpdateData] = await Promise.all([
+      const [pendingData, usersData, profileUpdateData, chatArchiveData] = await Promise.all([
         pendingRes.json(),
         usersRes.json(),
         pendingProfileRes.json(),
+        chatArchiveRes.json(),
       ]);
       setPending(Array.isArray(pendingData) ? pendingData : []);
       setUsers(Array.isArray(usersData) ? usersData : []);
       setPendingProfileUpdates(Array.isArray(profileUpdateData) ? profileUpdateData : []);
+      setGeneralChatLogs(Array.isArray(chatArchiveData?.general) ? chatArchiveData.general : []);
+      setPrivateChatLogs(Array.isArray(chatArchiveData?.private) ? chatArchiveData.private : []);
     } catch {
       toast.error("Yonetici verileri alinirken baglanti hatasi olustu.");
     }
@@ -109,7 +187,7 @@ const AdminApprovals = () => {
         return;
       }
       setCurrentUser(parsedUser);
-      void loadAdminData();
+      void loadAdminData(parsedUser.id);
     } catch {
       toast.error("Oturum bilgisi okunamadi.");
       navigate("/login");
@@ -300,6 +378,78 @@ const AdminApprovals = () => {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="mt-8">
+            <h2 className="font-display text-xl font-bold text-foreground mb-2">Son 7 Gun Mesaj Arsivi</h2>
+            <p className="text-sm text-muted-foreground mb-4">00:00'dan sonra sohbet ekrani sifirlansa da yonetici bu kayitlara 7 gun erisebilir.</p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <input
+                value={chatSearch}
+                onChange={(e) => setChatSearch(e.target.value)}
+                placeholder="Mesajlarda ara..."
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              />
+
+              <select
+                value={chatUserFilter}
+                onChange={(e) => setChatUserFilter(e.target.value)}
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">Tum kullanicilar</option>
+                {chatUsers.map((userName) => (
+                  <option key={userName} value={userName}>{userName}</option>
+                ))}
+              </select>
+
+              <select
+                value={chatDateFilter}
+                onChange={(e) => setChatDateFilter(e.target.value as "all" | "today" | "3days" | "7days")}
+                className="h-9 rounded-md border border-border bg-background px-3 text-sm"
+              >
+                <option value="all">Tum zamanlar</option>
+                <option value="today">Bugun</option>
+                <option value="3days">Son 3 gun</option>
+                <option value="7days">Son 7 gun</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+              <div className="rounded-lg border border-border p-4">
+                <h3 className="font-semibold text-sm mb-3">Genel Sohbet</h3>
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {filteredGeneralChatLogs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Kayit yok.</p>
+                  ) : (
+                    filteredGeneralChatLogs.slice().reverse().map((item) => (
+                      <div key={item.id} className="rounded-md border border-border p-2 text-xs">
+                        <p><strong>{item.userName || "Kullanici"}</strong></p>
+                        <p className="text-muted-foreground break-words">{item.text}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">{new Date(item.sentAt).toLocaleString("tr-TR")}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-border p-4">
+                <h3 className="font-semibold text-sm mb-3">Kullanicilar Arasi Mesajlar</h3>
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {filteredPrivateChatLogs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Kayit yok.</p>
+                  ) : (
+                    filteredPrivateChatLogs.slice().reverse().map((item) => (
+                      <div key={item.id} className="rounded-md border border-border p-2 text-xs">
+                        <p><strong>{item.fromName || item.fromId}</strong> {"->"} <strong>{item.toId}</strong></p>
+                        <p className="text-muted-foreground break-words">{item.text}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1">{new Date(item.sentAt).toLocaleString("tr-TR")}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <div className="mt-8">

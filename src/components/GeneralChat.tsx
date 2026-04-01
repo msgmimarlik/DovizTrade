@@ -18,14 +18,7 @@ type CurrentUser = {
   role?: "admin" | "user";
 };
 
-const initialMessages: GeneralChatMessage[] = [
-  { id: "g1", userName: "Ahmet K.", avatar: "AK", text: "Bugün dolar düşer mi sizce?", time: "14:05" },
-  { id: "g2", userName: "Elif Y.", avatar: "EY", text: "FED kararı bekleniyor, ona göre hareket ederim.", time: "14:08" },
-  { id: "g3", userName: "Mehmet S.", avatar: "MS", text: "Altın 3900'ü görür mü bu hafta?", time: "14:12" },
-  { id: "g4", userName: "Fatma D.", avatar: "FD", text: "Sterlin almak isteyenler var mı? İyi kurum var.", time: "14:18" },
-  { id: "g5", userName: "Can B.", avatar: "CB", text: "Euro 41'in altına inerse alıcıyım.", time: "14:22" },
-  { id: "g6", userName: "Zeynep A.", avatar: "ZA", text: "Herkese iyi akşamlar 👋", time: "14:30" },
-];
+const initialMessages: GeneralChatMessage[] = [];
 
 const GeneralChat = () => {
   const [messages, setMessages] = useState<GeneralChatMessage[]>(initialMessages);
@@ -110,7 +103,8 @@ const GeneralChat = () => {
           const payload = JSON.parse(event.data) as
             | { type: "snapshot"; messages: GeneralChatMessage[] }
             | { type: "new"; message: GeneralChatMessage }
-            | { type: "deleted"; id: string };
+            | { type: "deleted"; id: string }
+            | { type: "chat:reset"; scope?: string };
 
           if (payload.type === "snapshot") {
             setMessages(payload.messages);
@@ -120,6 +114,9 @@ const GeneralChat = () => {
           }
           if (payload.type === "deleted") {
             setMessages((prev) => prev.filter((msg) => msg.id !== payload.id));
+          }
+          if (payload.type === "chat:reset" && (payload.scope === "all" || payload.scope === "general")) {
+            setMessages([]);
           }
         } catch {
           // Ignore malformed payload.

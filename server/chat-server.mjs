@@ -6,6 +6,7 @@ import { WebSocketServer } from "ws";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const stateFilePath = path.join(__dirname, "chat-state.json");
+const chatArchiveFilePath = path.join(__dirname, "chat-archive.json");
 
 const defaultUsers = [
   {
@@ -23,6 +24,12 @@ const defaultUsers = [
 
 let registrationApplications = [];
 let users = [...defaultUsers];
+const CHAT_RETENTION_DAYS = 7;
+const messages = [];
+const chatArchive = {
+  general: [],
+  private: [],
+};
 
 const saveState = async () => {
   const state = {
@@ -45,13 +52,75 @@ const loadState = async () => {
   }
 };
 
+const getTrDayKey = (date = new Date()) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(date);
+
+const parseIsoMs = (value) => {
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const pruneChatArchive = () => {
+  const cutoff = Date.now() - CHAT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+  chatArchive.general = chatArchive.general.filter((entry) => parseIsoMs(entry.sentAt) >= cutoff);
+  chatArchive.private = chatArchive.private.filter((entry) => parseIsoMs(entry.sentAt) >= cutoff);
+};
+
+const saveChatArchive = async () => {
+  await fs.writeFile(
+    chatArchiveFilePath,
+    JSON.stringify({ general: chatArchive.general, private: chatArchive.private }, null, 2),
+    "utf-8",
+  );
+};
+
+const persistChatArchive = () => {
+  void saveChatArchive();
+};
+
+const loadChatArchive = async () => {
+  try {
+    const raw = await fs.readFile(chatArchiveFilePath, "utf-8");
+    const parsed = JSON.parse(raw);
+    chatArchive.general = Array.isArray(parsed.general) ? parsed.general : [];
+    chatArchive.private = Array.isArray(parsed.private) ? parsed.private : [];
+  } catch {
+    chatArchive.general = [];
+    chatArchive.private = [];
+    await saveChatArchive();
+  }
+
+  pruneChatArchive();
+  await saveChatArchive();
+};
+
+let dailyResetTimer = null;
+
+const scheduleDailyChatReset = () => {
+  if (dailyResetTimer) {
+    clearTimeout(dailyResetTimer);
+  }
+
+  const nowInTr = new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Istanbul" }));
+  const nextMidnightInTr = new Date(nowInTr);
+  nextMidnightInTr.setHours(24, 0, 0, 0);
+  const delayMs = Math.max(1000, nextMidnightInTr.getTime() - nowInTr.getTime());
+
+  dailyResetTimer = setTimeout(() => {
+    messages.splice(0, messages.length);
+    pruneChatArchive();
+    persistChatArchive();
+    broadcast({ type: "chat:reset", scope: "all", reason: "midnight-tr", dayKey: getTrDayKey() });
+    scheduleDailyChatReset();
+  }, delayMs);
+};
+
 await loadState();
+await loadChatArchive();
 
 const PORT = Number(process.env.CHAT_WS_PORT ?? 8787);
 const INACTIVE_LISTING_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_SESSIONS_PER_USER = 2;
-
-const messages = [];
 
 let standardListings = [];
 let arbitrageListings = [];
@@ -78,6 +147,8 @@ const broadcast = (payload) => {
     }
   });
 };
+
+scheduleDailyChatReset();
 
 const annotateListings = (list) => {
   const onlineIds = new Set(connectedSockets.values());
@@ -503,6 +574,7 @@ wss.on("connection", (socket) => {
       }
 
       if (message.type === "send") {
+        const sentAt = new Date().toISOString();
         const newMessage = {
           id: `g-${Date.now()}`,
           userName: message.userName ?? "Kullanici",
@@ -513,6 +585,15 @@ wss.on("connection", (socket) => {
 
         if (!newMessage.text) return;
         messages.push(newMessage);
+        chatArchive.general.push({
+          id: newMessage.id,
+          userId: Number(connectedSockets.get(socket) || 0) || null,
+          userName: newMessage.userName,
+          text: newMessage.text,
+          sentAt,
+        });
+        pruneChatArchive();
+        persistChatArchive();
         broadcast({ type: "new", message: newMessage });
       }
 
@@ -563,6 +644,16 @@ wss.on("connection", (socket) => {
       if (message.type === "chat:private") {
         const { toId, fromId, fromName, text, time } = message;
         if (!toId || !fromId || !text) return;
+        chatArchive.private.push({
+          id: `p-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          fromId: String(fromId),
+          toId: String(toId),
+          fromName: fromName || null,
+          text: String(text),
+          sentAt: new Date().toISOString(),
+        });
+        pruneChatArchive();
+        persistChatArchive();
         connectedSockets.forEach((userId, sock) => {
           if (String(userId) === String(toId) && sock.readyState === sock.OPEN) {
             sock.send(JSON.stringify({ type: "chat:private", fromId: String(fromId), fromName, text, time }));

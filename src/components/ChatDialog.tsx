@@ -30,6 +30,23 @@ interface ChatDialogProps {
 
 const getMsgKey = (id1: string, id2: string) => `chat_msgs_${[id1, id2].sort().join("_")}`;
 const getConvoKey = (myId: string) => `doviz_convos_${myId}`;
+const CHAT_RESET_MARKER_KEY = "doviz_chat_reset_marker_tr";
+
+const getTrDayKey = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(new Date());
+
+const clearPrivateChatStorageIfNeeded = () => {
+  const today = getTrDayKey();
+  const marker = localStorage.getItem(CHAT_RESET_MARKER_KEY);
+  if (marker === today) return;
+
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith("chat_msgs_") || key.startsWith("doviz_convos_")) {
+      localStorage.removeItem(key);
+    }
+  });
+  localStorage.setItem(CHAT_RESET_MARKER_KEY, today);
+};
 
 const updateConvoSummary = (myId: string, them: OnlineUser, lastMsg: string, time: string, addUnread: boolean) => {
   try {
@@ -65,6 +82,10 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    clearPrivateChatStorageIfNeeded();
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -121,6 +142,11 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
+          if (payload.type === "chat:reset" && (payload.scope === "all" || payload.scope === "private")) {
+            clearPrivateChatStorageIfNeeded();
+            setMessages([]);
+            return;
+          }
           if (payload.type === "chat:private" && normalizeUserSocketId(payload.fromId) === theirBaseId) {
             const timeStr = payload.time || new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
             const newMsg: ChatMessage = {
