@@ -1,3 +1,4 @@
+import { apiRequest, getClientSessionId } from "@/lib/network";
 import CurrencyTicker from "@/components/CurrencyTicker";
 import Navbar from "@/components/Navbar";
 import CurrencyFilter from "@/components/CurrencyFilter";
@@ -155,11 +156,7 @@ const Index = () => {
         const rawUser = sessionStorage.getItem("currentUser");
         if (rawUser) {
           const u = JSON.parse(rawUser);
-          let clientSessionId = sessionStorage.getItem("clientSessionId");
-          if (!clientSessionId) {
-            clientSessionId = `${u?.id || "user"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            sessionStorage.setItem("clientSessionId", clientSessionId);
-          }
+          const clientSessionId = getClientSessionId(u?.id);
           if (u?.id) {
             ws.send(JSON.stringify({
               type: "user:online",

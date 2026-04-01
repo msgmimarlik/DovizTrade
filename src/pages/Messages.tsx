@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from "react";
 import type { OnlineUser } from "@/data/mockUsers";
 import ChatDialog from "@/components/ChatDialog";
 import { resolveWsUrl } from "@/lib/network";
+import { getClientSessionId } from "@/lib/network";
 
 interface ConvoSummary {
   userId: string;
@@ -61,7 +62,9 @@ const Messages = () => {
         const raw = sessionStorage.getItem("currentUser");
         if (raw) {
           const u = JSON.parse(raw);
-          if (u?.id) ws.send(JSON.stringify({ type: "user:online", userId: u.id }));
+          if (u?.id) {
+            ws.send(JSON.stringify({ type: "user:online", userId: u.id, clientSessionId: getClientSessionId(u.id) }));
+          }
         }
       } catch { /* ignore */ }
     };
