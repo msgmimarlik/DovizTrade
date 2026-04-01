@@ -575,10 +575,21 @@ wss.on("connection", (socket) => {
 
       if (message.type === "send") {
         const sentAt = new Date().toISOString();
+        const senderUserId = Number(connectedSockets.get(socket) || 0) || null;
+        const senderProfile = senderUserId ? findProfileByUserId(senderUserId) : null;
+        const resolvedSenderName =
+          senderProfile?.officeName || senderProfile?.name || message.userName || "Kullanici";
+        const resolvedAvatar = resolvedSenderName
+          .split(" ")
+          .map((part) => part[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase() || "KU";
+
         const newMessage = {
           id: `g-${Date.now()}`,
-          userName: message.userName ?? "Kullanici",
-          avatar: message.avatar ?? "KU",
+          userName: resolvedSenderName,
+          avatar: resolvedAvatar,
           text: String(message.text ?? "").trim(),
           time: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }),
         };
@@ -587,7 +598,7 @@ wss.on("connection", (socket) => {
         messages.push(newMessage);
         chatArchive.general.push({
           id: newMessage.id,
-          userId: Number(connectedSockets.get(socket) || 0) || null,
+          userId: senderUserId,
           userName: newMessage.userName,
           text: newMessage.text,
           sentAt,

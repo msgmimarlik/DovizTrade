@@ -15,6 +15,7 @@ interface GeneralChatMessage {
 
 type CurrentUser = {
   name?: string;
+  officeName?: string;
   role?: "admin" | "user";
 };
 
@@ -158,7 +159,7 @@ const GeneralChat = () => {
       return;
     }
 
-    const displayName = currentUser?.name || "Kullanici";
+    const displayName = currentUser?.officeName || currentUser?.name || "Kullanici";
     const avatar = displayName
       .split(" ")
       .map((part) => part[0])
@@ -246,7 +247,8 @@ const GeneralChat = () => {
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
         {messages.map((msg) => {
-          const isMine = msg.userName === (currentUser?.name || "");
+          const myDisplayName = currentUser?.officeName || currentUser?.name || "";
+          const isMine = msg.userName === myDisplayName;
           return (
             <div
               key={msg.id}
