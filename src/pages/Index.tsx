@@ -117,6 +117,7 @@ const appendUserTransaction = (
       rate: tx.rate,
       counterparty: tx.counterparty,
       counterpartyPhone: tx.counterpartyPhone || null,
+      occurredAt: Date.now(),
       time: new Date().toLocaleString("tr-TR"),
     };
     localStorage.setItem(storageKey, JSON.stringify([newTx, ...existing].slice(0, 100)));

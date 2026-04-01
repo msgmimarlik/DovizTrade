@@ -48,6 +48,30 @@ type ProfileFormData = {
   address: string;
 };
 
+const TRANSACTION_HISTORY_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+const getTransactionTimestamp = (tx: MyTransaction): number | null => {
+  if (typeof tx.occurredAt === "number" && Number.isFinite(tx.occurredAt)) {
+    return tx.occurredAt;
+  }
+
+  if (typeof tx.id === "number" && tx.id > 1_000_000_000_000) {
+    return tx.id;
+  }
+
+  const parsed = Date.parse(tx.time);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
+const filterRecentTransactions = (transactions: MyTransaction[]) => {
+  const now = Date.now();
+  return transactions.filter((tx) => {
+    const timestamp = getTransactionTimestamp(tx);
+    if (timestamp === null) return false;
+    return now - timestamp <= TRANSACTION_HISTORY_WINDOW_MS;
+  });
+};
+
 const Navbar = () => {
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -96,7 +120,8 @@ const Navbar = () => {
       });
       if (user?.id) {
         const raw = localStorage.getItem(`userTransactions_${user.id}`);
-        setMyTransactions(raw ? JSON.parse(raw) : []);
+        const parsedTransactions: MyTransaction[] = raw ? JSON.parse(raw) : [];
+        setMyTransactions(filterRecentTransactions(parsedTransactions));
       }
     } catch {
       setCurrentUser(null);

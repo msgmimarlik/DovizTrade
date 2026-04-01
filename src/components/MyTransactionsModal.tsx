@@ -10,6 +10,7 @@ export interface MyTransaction {
   rate: number;
   counterparty: string;
   counterpartyPhone?: string | null;
+  occurredAt?: number;
   time: string;
 }
 
