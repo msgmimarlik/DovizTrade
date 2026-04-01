@@ -43,6 +43,32 @@ const query = async (sql, params = []) => {
   return rows;
 };
 
+const PROFILE_UPDATABLE_FIELDS = [
+  "full_name",
+  "office_name",
+  "phone",
+  "gsm",
+  "city",
+  "district",
+  "address",
+];
+
+const PROFILE_FIELD_INPUT_MAP = {
+  name: "full_name",
+  officeName: "office_name",
+  phone: "phone",
+  gsm: "gsm",
+  city: "city",
+  district: "district",
+  address: "address",
+};
+
+const sanitizeNullableText = (value) => {
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
 const ensureUsersTable = async () => {
   try {
     // Try to create the table if it doesn't exist
@@ -98,6 +124,26 @@ const ensureUsersTable = async () => {
   console.log('✓ Users table schema verified');
 };
 
+const ensureProfileUpdateRequestsTable = async () => {
+  try {
+    await query(`CREATE TABLE IF NOT EXISTS profile_update_requests (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      requested_fields JSON NOT NULL,
+      status ENUM('pending','approved','rejected') NOT NULL DEFAULT 'pending',
+      reviewed_by INT NULL,
+      rejection_reason TEXT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      reviewed_at TIMESTAMP NULL,
+      INDEX idx_profile_update_user_id (user_id),
+      INDEX idx_profile_update_status (status)
+    )`);
+    console.log('✓ Profile update requests table verified');
+  } catch (err) {
+    console.error('Error creating profile_update_requests table:', err.message);
+  }
+};
+
 const ensureAdminUser = async () => {
   const email = 'muratsecmenn@gmail.com';
   const plainPassword = 'Murat-17';
@@ -136,6 +182,7 @@ const initializeAuthSchema = async () => {
     await query('SELECT 1');
     console.log('MySQL baglantisi basarili!');
     await ensureUsersTable();
+    await ensureProfileUpdateRequestsTable();
     await ensureAdminUser();
     console.log('Auth schema hazir.');
   } catch (schemaErr) {
@@ -247,6 +294,102 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.patch('/api/users/:id/password', async (req, res) => {
+  const userId = Number(req.params.id);
+  const { currentPassword, newPassword } = req.body || {};
+
+  if (!userId || !currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Eksik alanlar var.' });
+  }
+
+  if (!/^[a-z0-9!@#$%^&*._-]{6,}$/.test(String(newPassword))) {
+    return res.status(400).json({ error: 'Yeni sifre kurallara uygun degil.' });
+  }
+
+  try {
+    const rows = await query('SELECT id, password_hash FROM users WHERE id = ? LIMIT 1', [userId]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Kullanici bulunamadi.' });
+    }
+
+    const user = rows[0];
+    const stored = String(user.password_hash || '');
+    const isHash = stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$');
+    const validPassword = isHash ? await bcrypt.compare(currentPassword, stored) : currentPassword === stored;
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Mevcut sifre hatali.' });
+    }
+
+    const newHash = await bcrypt.hash(String(newPassword), 10);
+    await query('UPDATE users SET password_hash = ? WHERE id = ?', [newHash, userId]);
+    return res.json({ message: 'Sifre basariyla degistirildi.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/users/:id/profile-update-request', async (req, res) => {
+  const userId = Number(req.params.id);
+  if (!userId) {
+    return res.status(400).json({ error: 'Gecersiz kullanici.' });
+  }
+
+  try {
+    const users = await query(
+      `SELECT id, full_name, office_name, phone, gsm, city, district, address
+       FROM users WHERE id = ? LIMIT 1`,
+      [userId],
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'Kullanici bulunamadi.' });
+    }
+
+    const current = users[0];
+    const changed = {};
+
+    Object.entries(PROFILE_FIELD_INPUT_MAP).forEach(([inputKey, dbField]) => {
+      if (!Object.prototype.hasOwnProperty.call(req.body || {}, inputKey)) return;
+      const newValue = sanitizeNullableText(req.body[inputKey]);
+      const oldValue = sanitizeNullableText(current[dbField]);
+      if (newValue !== oldValue) {
+        changed[dbField] = newValue;
+      }
+    });
+
+    if (Object.keys(changed).length === 0) {
+      return res.status(400).json({ error: 'Degisen profil bilgisi bulunamadi.' });
+    }
+
+    const existing = await query(
+      `SELECT id FROM profile_update_requests
+       WHERE user_id = ? AND status = 'pending'
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId],
+    );
+
+    if (existing.length > 0) {
+      await query(
+        `UPDATE profile_update_requests
+         SET requested_fields = ?, created_at = CURRENT_TIMESTAMP, reviewed_by = NULL, rejection_reason = NULL, reviewed_at = NULL
+         WHERE id = ?`,
+        [JSON.stringify(changed), existing[0].id],
+      );
+      return res.json({ message: 'Profil degisiklik talebiniz guncellendi ve yonetici onayina sunuldu.' });
+    }
+
+    await query(
+      `INSERT INTO profile_update_requests (user_id, requested_fields, status)
+       VALUES (?, ?, 'pending')`,
+      [userId, JSON.stringify(changed)],
+    );
+
+    return res.status(201).json({ message: 'Profil degisiklik talebiniz yonetici onayina gonderildi.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/admin/pending-users', async (req, res) => {
   try {
     const rows = await query(
@@ -271,6 +414,149 @@ app.get('/api/admin/users', async (req, res) => {
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/profile-update-requests', async (req, res) => {
+  try {
+    const rows = await query(
+      `SELECT
+          r.id,
+          r.user_id,
+          r.requested_fields,
+          r.status,
+          r.created_at,
+          u.full_name,
+          u.office_name,
+          u.email,
+          u.phone,
+          u.gsm,
+          u.city,
+          u.district,
+          u.address
+       FROM profile_update_requests r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.status = 'pending'
+       ORDER BY r.created_at ASC`,
+    );
+
+    const result = rows.map((row) => {
+      let requested = {};
+      try {
+        requested = typeof row.requested_fields === 'string'
+          ? JSON.parse(row.requested_fields)
+          : (row.requested_fields || {});
+      } catch {
+        requested = {};
+      }
+
+      const changes = Object.keys(requested)
+        .filter((key) => PROFILE_UPDATABLE_FIELDS.includes(key))
+        .map((key) => ({
+          field: key,
+          oldValue: row[key] ?? null,
+          newValue: requested[key] ?? null,
+        }));
+
+      return {
+        id: row.id,
+        user_id: row.user_id,
+        full_name: row.full_name,
+        office_name: row.office_name,
+        email: row.email,
+        created_at: row.created_at,
+        changes,
+      };
+    });
+
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/profile-update-requests/:id/approve', async (req, res) => {
+  const requestId = Number(req.params.id);
+  if (!requestId) {
+    return res.status(400).json({ error: 'Gecersiz talep.' });
+  }
+
+  try {
+    const rows = await query(
+      `SELECT id, user_id, requested_fields, status
+       FROM profile_update_requests
+       WHERE id = ? LIMIT 1`,
+      [requestId],
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Talep bulunamadi.' });
+    }
+
+    const requestRow = rows[0];
+    if (requestRow.status !== 'pending') {
+      return res.status(400).json({ error: 'Talep zaten islenmis.' });
+    }
+
+    let requested = {};
+    try {
+      requested = typeof requestRow.requested_fields === 'string'
+        ? JSON.parse(requestRow.requested_fields)
+        : (requestRow.requested_fields || {});
+    } catch {
+      requested = {};
+    }
+
+    const updates = Object.entries(requested)
+      .filter(([key]) => PROFILE_UPDATABLE_FIELDS.includes(key));
+
+    if (updates.length > 0) {
+      const setClause = updates.map(([key]) => `${key} = ?`).join(', ');
+      const values = updates.map(([, value]) => sanitizeNullableText(value));
+      await query(`UPDATE users SET ${setClause} WHERE id = ?`, [...values, requestRow.user_id]);
+    }
+
+    await query(
+      `UPDATE profile_update_requests
+       SET status = 'approved', reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [requestId],
+    );
+
+    return res.json({ message: 'Profil degisikligi onaylandi.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+app.patch('/api/admin/profile-update-requests/:id/reject', async (req, res) => {
+  const requestId = Number(req.params.id);
+  const rejectionReason = sanitizeNullableText(req.body?.reason);
+  if (!requestId) {
+    return res.status(400).json({ error: 'Gecersiz talep.' });
+  }
+
+  try {
+    const rows = await query(
+      `SELECT id, status FROM profile_update_requests WHERE id = ? LIMIT 1`,
+      [requestId],
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Talep bulunamadi.' });
+    }
+    if (rows[0].status !== 'pending') {
+      return res.status(400).json({ error: 'Talep zaten islenmis.' });
+    }
+
+    await query(
+      `UPDATE profile_update_requests
+       SET status = 'rejected', rejection_reason = ?, reviewed_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [rejectionReason, requestId],
+    );
+    return res.json({ message: 'Profil degisikligi reddedildi.' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
   }
 });
 

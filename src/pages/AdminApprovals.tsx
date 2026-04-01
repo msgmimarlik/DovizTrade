@@ -34,27 +34,60 @@ type StoredUser = {
   is_active?: boolean;
 };
 
+type ProfileUpdateChange = {
+  field: string;
+  oldValue: string | null;
+  newValue: string | null;
+};
+
+type PendingProfileUpdate = {
+  id: number;
+  user_id: number;
+  full_name?: string;
+  office_name?: string;
+  email?: string;
+  created_at?: string;
+  changes: ProfileUpdateChange[];
+};
+
+const PROFILE_FIELD_LABELS: Record<string, string> = {
+  full_name: "Yetkili",
+  office_name: "Buro Adi",
+  phone: "Telefon",
+  gsm: "GSM",
+  city: "Il",
+  district: "Ilce",
+  address: "Adres",
+};
+
 const AdminApprovals = () => {
   const navigate = useNavigate();
   const [pending, setPending] = useState<PendingRegistration[]>([]);
+  const [pendingProfileUpdates, setPendingProfileUpdates] = useState<PendingProfileUpdate[]>([]);
   const [users, setUsers] = useState<StoredUser[]>([]);
   const [currentUser, setCurrentUser] = useState<StoredUser | null>(null);
 
   const loadAdminData = async () => {
     try {
-      const [pendingRes, usersRes] = await Promise.all([
+      const [pendingRes, usersRes, pendingProfileRes] = await Promise.all([
         fetch(apiUrl("/api/admin/pending-users")),
         fetch(apiUrl("/api/admin/users")),
+        fetch(apiUrl("/api/admin/profile-update-requests")),
       ]);
 
-      if (!pendingRes.ok || !usersRes.ok) {
+      if (!pendingRes.ok || !usersRes.ok || !pendingProfileRes.ok) {
         toast.error("Yonetici verileri alinamadi.");
         return;
       }
 
-      const [pendingData, usersData] = await Promise.all([pendingRes.json(), usersRes.json()]);
+      const [pendingData, usersData, profileUpdateData] = await Promise.all([
+        pendingRes.json(),
+        usersRes.json(),
+        pendingProfileRes.json(),
+      ]);
       setPending(Array.isArray(pendingData) ? pendingData : []);
       setUsers(Array.isArray(usersData) ? usersData : []);
+      setPendingProfileUpdates(Array.isArray(profileUpdateData) ? profileUpdateData : []);
     } catch {
       toast.error("Yonetici verileri alinirken baglanti hatasi olustu.");
     }
@@ -141,6 +174,42 @@ const AdminApprovals = () => {
     }
   };
 
+  const approveProfileUpdate = async (requestId: number) => {
+    try {
+      const response = await fetch(apiUrl(`/api/admin/profile-update-requests/${requestId}/approve`), {
+        method: "PATCH",
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        toast.error(payload.error || "Profil talebi onaylanamadi.");
+        return;
+      }
+      toast.success("Profil degisiklik talebi onaylandi.");
+      void loadAdminData();
+    } catch {
+      toast.error("Sunucuya baglanilamadi.");
+    }
+  };
+
+  const rejectProfileUpdate = async (requestId: number) => {
+    try {
+      const response = await fetch(apiUrl(`/api/admin/profile-update-requests/${requestId}/reject`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        toast.error(payload.error || "Profil talebi reddedilemedi.");
+        return;
+      }
+      toast.success("Profil degisiklik talebi reddedildi.");
+      void loadAdminData();
+    } catch {
+      toast.error("Sunucuya baglanilamadi.");
+    }
+  };
+
   if (!currentUser) {
     return null;
   }
@@ -188,6 +257,50 @@ const AdminApprovals = () => {
               ))}
             </div>
           )}
+
+          <div className="mt-8">
+            <h2 className="font-display text-xl font-bold text-foreground mb-2">Profil Degisiklik Talepleri</h2>
+            <p className="text-sm text-muted-foreground mb-4">Sadece degisen alanlari gorup onaylayin veya reddedin.</p>
+
+            {pendingProfileUpdates.length === 0 ? (
+              <div className="rounded-md border border-border p-4 text-sm text-muted-foreground">
+                Bekleyen profil degisiklik talebi yok.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {pendingProfileUpdates.map((request) => (
+                  <div key={request.id} className="rounded-lg border border-border p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-3">
+                      <p><strong>Buro:</strong> {request.office_name || "-"}</p>
+                      <p><strong>Yetkili:</strong> {request.full_name || "-"}</p>
+                      <p><strong>E-posta:</strong> {request.email || "-"}</p>
+                      <p><strong>Talep Tarihi:</strong> {request.created_at ? new Date(request.created_at).toLocaleString("tr-TR") : "-"}</p>
+                    </div>
+
+                    <div className="rounded-md border border-border p-3 space-y-2">
+                      {request.changes.map((change, index) => (
+                        <div key={`${request.id}-${change.field}-${index}`} className="text-sm">
+                          <strong>{PROFILE_FIELD_LABELS[change.field] || change.field}:</strong>{" "}
+                          <span className="text-muted-foreground">{change.oldValue || "-"}</span>
+                          <span className="mx-2">→</span>
+                          <span>{change.newValue || "-"}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex items-center gap-2 mt-4">
+                      <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => approveProfileUpdate(request.id)}>
+                        <Check className="w-4 h-4 mr-2" /> Onayla
+                      </Button>
+                      <Button variant="destructive" onClick={() => rejectProfileUpdate(request.id)}>
+                        <X className="w-4 h-4 mr-2" /> Reddet
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div className="mt-8">
             <h2 className="font-display text-xl font-bold text-foreground mb-2">Mevcut Kullanicilar</h2>

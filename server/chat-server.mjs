@@ -68,7 +68,7 @@ const userSessionSlots = new Map();
 const activeTabUserIds = new Set();
 const inactiveListingTimeouts = new Map();
 // Stores profile info for MySQL-auth users (not in local users array)
-const connectedUserProfiles = new Map(); // userId -> { name, officeName, location, role }
+const connectedUserProfiles = new Map(); // userId -> { name, officeName, location, role, email, phone, gsm }
 
 const broadcast = (payload) => {
   const data = JSON.stringify(payload);
@@ -210,6 +210,29 @@ const broadcastOnlineUsers = () => {
   broadcast({ type: "users:online", users: buildOnlineList() });
 };
 
+const findProfileByUserId = (userId) => {
+  const connectedProfile = connectedUserProfiles.get(userId);
+  const localUser = users.find((u) => Number(u.id) === Number(userId));
+
+  return {
+    name: connectedProfile?.name || localUser?.name || localUser?.username || null,
+    officeName: connectedProfile?.officeName || localUser?.officeName || null,
+    location: connectedProfile?.location || localUser?.location || null,
+    role: connectedProfile?.role || localUser?.role || null,
+    email: connectedProfile?.email || localUser?.email || null,
+    phone: connectedProfile?.phone || localUser?.phone || null,
+    gsm: connectedProfile?.gsm || localUser?.gsm || null,
+  };
+};
+
+const sendToUserSockets = (userId, payload) => {
+  connectedSockets.forEach((connectedUserId, sock) => {
+    if (Number(connectedUserId) === Number(userId) && sock.readyState === sock.OPEN) {
+      sock.send(JSON.stringify(payload));
+    }
+  });
+};
+
 const clearInactiveListingTimeout = (userId) => {
   const timeoutId = inactiveListingTimeouts.get(userId);
   if (timeoutId) {
@@ -318,15 +341,16 @@ wss.on("connection", (socket) => {
           connectedSockets.set(socket, userId);
           connectedClientSessions.set(socket, clientSessionId);
           clearInactiveListingTimeout(userId);
-          // Store profile info for users not in the local WS users array
-          if (!connectedUserProfiles.has(userId)) {
-            connectedUserProfiles.set(userId, {
-              name: message.name || String(userId),
-              officeName: message.officeName || null,
-              location: message.location || null,
-              role: message.role || "user",
-            });
-          }
+          // Update profile info from authenticated frontend session.
+          connectedUserProfiles.set(userId, {
+            name: message.name || String(userId),
+            officeName: message.officeName || null,
+            location: message.location || null,
+            role: message.role || "user",
+            email: message.email || null,
+            phone: message.phone || null,
+            gsm: message.gsm || null,
+          });
           broadcastOnlineUsers();
           broadcastListingsSnapshot();
         }
@@ -549,6 +573,40 @@ wss.on("connection", (socket) => {
 
       if (message.type === "transaction:start") {
         if (!message.actorName || !message.listingId) return;
+        const actorUserId = connectedSockets.get(socket);
+
+        let transactionListing = null;
+        const listingInStandard = standardListings.find((item) => item.id === message.listingId);
+        const listingInArbitrage = arbitrageListings.find((item) => item.id === message.listingId);
+        transactionListing = listingInStandard || listingInArbitrage || null;
+
+        const ownerUserId = transactionListing?.ownerId ? Number(transactionListing.ownerId) : null;
+
+        const ownerProfile = ownerUserId ? findProfileByUserId(ownerUserId) : null;
+        const listingType = transactionListing?.type === "buy" || transactionListing?.type === "sell"
+          ? transactionListing.type
+          : null;
+        const actorSideType = listingType === "sell" ? "buy" : listingType === "buy" ? "sell" : null;
+        const ownerInfo = {
+          name: ownerProfile?.name || transactionListing?.userName || message.ownerName || null,
+          officeName: ownerProfile?.officeName || transactionListing?.officeName || null,
+          location: ownerProfile?.location || transactionListing?.location || null,
+          role: ownerProfile?.role || null,
+          email: ownerProfile?.email || null,
+          phone: ownerProfile?.phone || null,
+          gsm: ownerProfile?.gsm || null,
+        };
+
+        const actorInfo = {
+          name: message.actorName,
+          officeName: message.actorInfo?.officeName || null,
+          location: message.actorInfo?.location || null,
+          role: message.actorInfo?.role || null,
+          email: message.actorInfo?.email || null,
+          phone: message.actorInfo?.phone || null,
+          gsm: message.actorInfo?.gsm || null,
+        };
+
         // Find in standard or arbitrage listings
         let updated = false;
         const txAmount = Number(message.transactionAmount);
@@ -586,15 +644,49 @@ wss.on("connection", (socket) => {
             break;
           }
         }
-        broadcast({
-          type: "transaction:started",
-          actorName: message.actorName,
-          listingId: message.listingId,
-          listingLabel: message.listingLabel,
-          ownerName: message.ownerName,
-          transactionAmount: message.transactionAmount,
-          actorInfo: message.actorInfo || null,
-        });
+        // Owner side modal
+        if (ownerUserId) {
+          sendToUserSockets(ownerUserId, {
+            type: "transaction:started",
+            viewerRole: "owner",
+            targetUserId: ownerUserId,
+            listingId: message.listingId,
+            listingLabel: message.listingLabel,
+            transactionAmount: message.transactionAmount,
+            ownerName: message.ownerName,
+            actorName: message.actorName,
+            counterpartyName: message.actorName,
+            counterpartyInfo: actorInfo,
+            transactionType: listingType,
+            currency: transactionListing?.currency || null,
+            currencyFlag: transactionListing?.currencyFlag || null,
+            rate: transactionListing?.rate || null,
+            ownerInfo,
+            actorInfo,
+          });
+        }
+
+        // Actor side modal
+        if (actorUserId) {
+          sendToUserSockets(actorUserId, {
+            type: "transaction:started",
+            viewerRole: "actor",
+            targetUserId: Number(actorUserId),
+            listingId: message.listingId,
+            listingLabel: message.listingLabel,
+            transactionAmount: message.transactionAmount,
+            ownerName: message.ownerName,
+            actorName: message.actorName,
+            counterpartyName: ownerInfo.name || message.ownerName || "Ilan Sahibi",
+            counterpartyInfo: ownerInfo,
+            transactionType: actorSideType,
+            currency: transactionListing?.currency || null,
+            currencyFlag: transactionListing?.currencyFlag || null,
+            rate: transactionListing?.rate || null,
+            ownerInfo,
+            actorInfo,
+          });
+        }
         if (updated) {
           broadcastListingsSnapshot();
         }
