@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { OnlineUser } from "@/data/mockUsers";
 import { getClientSessionId, normalizeUserSocketId, resolveWsUrl } from "@/lib/network";
+import { toast } from "sonner";
 
 interface ChatMessage {
   id: string;
@@ -78,33 +79,75 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
   // WebSocket for real-time private messages
   useEffect(() => {
     if (!myId) return;
-    const ws = new WebSocket(resolveWsUrl());
-    wsRef.current = ws;
+    let reconnectTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
+    let isDisposed = false;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "user:online", userId: Number(myId), clientSessionId: getClientSessionId(myId) }));
+    const clearHeartbeat = () => {
+      if (heartbeatTimer !== null) {
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
     };
 
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "chat:private" && normalizeUserSocketId(payload.fromId) === theirBaseId) {
-          const timeStr = payload.time || new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
-          const newMsg: ChatMessage = {
-            id: `recv-${Date.now()}`,
-            senderId: theirBaseId,
-            text: payload.text,
-            time: timeStr,
-            isMine: false,
-          };
-          setMessages((prev) => [...prev, newMsg]);
-          updateConvoSummary(myId, user, payload.text, timeStr, false);
+    const connect = () => {
+      const ws = new WebSocket(resolveWsUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "user:online", userId: Number(myId), clientSessionId: getClientSessionId(myId) }));
+        clearHeartbeat();
+        heartbeatTimer = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 15000);
+      };
+
+      ws.onclose = () => {
+        clearHeartbeat();
+        if (wsRef.current === ws) {
+          wsRef.current = null;
         }
-      } catch { /* ignore */ }
+        if (!isDisposed) {
+          reconnectTimer = window.setTimeout(connect, 1500);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "chat:private" && normalizeUserSocketId(payload.fromId) === theirBaseId) {
+            const timeStr = payload.time || new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
+            const newMsg: ChatMessage = {
+              id: `recv-${Date.now()}`,
+              senderId: theirBaseId,
+              text: payload.text,
+              time: timeStr,
+              isMine: false,
+            };
+            setMessages((prev) => [...prev, newMsg]);
+            updateConvoSummary(myId, user, payload.text, timeStr, false);
+          }
+        } catch {
+          // ignore
+        }
+      };
     };
+
+    connect();
 
     return () => {
-      ws.close();
+      isDisposed = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+      clearHeartbeat();
+      wsRef.current?.close();
       wsRef.current = null;
     };
   }, [myId, theirBaseId, user]);
@@ -130,6 +173,8 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
         text: input.trim(),
         time: timeStr,
       }));
+    } else {
+      toast.error("Sohbet baglantisi yenileniyor. Lutfen 1-2 saniye sonra tekrar deneyin.");
     }
     updateConvoSummary(myId, user, input.trim(), timeStr, false);
     setInput("");

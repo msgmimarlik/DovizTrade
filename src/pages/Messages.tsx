@@ -54,10 +54,18 @@ const Messages = () => {
 
   // WebSocket for online users
   useEffect(() => {
-    const ws = new WebSocket(resolveWsUrl());
-    wsRef.current = ws;
+    let reconnectTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
+    let isDisposed = false;
 
-    ws.onopen = () => {
+    const clearHeartbeat = () => {
+      if (heartbeatTimer !== null) {
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
+
+    const sendPresence = (ws: WebSocket) => {
       try {
         const raw = sessionStorage.getItem("currentUser");
         if (raw) {
@@ -66,20 +74,60 @@ const Messages = () => {
             ws.send(JSON.stringify({ type: "user:online", userId: u.id, clientSessionId: getClientSessionId(u.id) }));
           }
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore
+      }
     };
 
-    ws.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "users:online" && Array.isArray(payload.users)) {
-          setOnlineUsers(payload.users);
+    const connect = () => {
+      const ws = new WebSocket(resolveWsUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        sendPresence(ws);
+        clearHeartbeat();
+        heartbeatTimer = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 15000);
+      };
+
+      ws.onclose = () => {
+        clearHeartbeat();
+        if (wsRef.current === ws) {
+          wsRef.current = null;
         }
-      } catch { /* ignore */ }
+        if (!isDisposed) {
+          reconnectTimer = window.setTimeout(connect, 1500);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          if (payload.type === "users:online" && Array.isArray(payload.users)) {
+            setOnlineUsers(payload.users);
+          }
+        } catch {
+          // ignore
+        }
+      };
     };
+
+    connect();
 
     return () => {
-      ws.close();
+      isDisposed = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+      clearHeartbeat();
+      wsRef.current?.close();
       wsRef.current = null;
     };
   }, []);
