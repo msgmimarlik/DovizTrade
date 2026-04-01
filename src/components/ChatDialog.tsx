@@ -3,7 +3,7 @@ import { X, Send, ArrowLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { OnlineUser } from "@/data/mockUsers";
-import { resolveWsUrl } from "@/lib/network";
+import { getClientSessionId, normalizeUserSocketId, resolveWsUrl } from "@/lib/network";
 
 interface ChatMessage {
   id: string;
@@ -55,6 +55,7 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
   });
   const myId = String(currentUser?.id ?? "");
   const theirId = user.id;
+  const theirBaseId = normalizeUserSocketId(user.id);
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     if (!myId) return [];
@@ -81,17 +82,17 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
     wsRef.current = ws;
 
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "user:online", userId: Number(myId) }));
+      ws.send(JSON.stringify({ type: "user:online", userId: Number(myId), clientSessionId: getClientSessionId(myId) }));
     };
 
     ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data);
-        if (payload.type === "chat:private" && String(payload.fromId) === String(theirId)) {
+        if (payload.type === "chat:private" && normalizeUserSocketId(payload.fromId) === theirBaseId) {
           const timeStr = payload.time || new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
           const newMsg: ChatMessage = {
             id: `recv-${Date.now()}`,
-            senderId: theirId,
+            senderId: theirBaseId,
             text: payload.text,
             time: timeStr,
             isMine: false,
@@ -106,7 +107,7 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
       ws.close();
       wsRef.current = null;
     };
-  }, [myId, theirId]);
+  }, [myId, theirBaseId, user]);
 
   const handleSend = () => {
     if (!input.trim() || !myId) return;
@@ -123,7 +124,7 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: "chat:private",
-        toId: theirId,
+        toId: theirBaseId,
         fromId: myId,
         fromName: currentUser?.name || myId,
         text: input.trim(),

@@ -162,7 +162,7 @@ const buildOnlineList = () => {
     const slotMap = userSessionSlots.get(userId);
     const baseName = officeName || displayName || String(userId);
 
-    if (isOnline && slotMap && slotMap.size > 0) {
+    if (isOnline && slotMap && slotMap.size > 1) {
       const orderedSlots = [...slotMap.values()].sort((a, b) => a - b);
       orderedSlots.forEach((slotNumber) => {
         const nameWithSlot = `${baseName} ${slotNumber}`;
