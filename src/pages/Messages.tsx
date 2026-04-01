@@ -18,6 +18,23 @@ interface ConvoSummary {
 }
 
 const getConvoKey = (myId: string) => `doviz_convos_${myId}`;
+const CHAT_RESET_MARKER_KEY = "doviz_chat_reset_marker_tr";
+
+const getTrDayKey = () =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Istanbul" }).format(new Date());
+
+const clearPrivateChatStorageIfNeeded = () => {
+  const today = getTrDayKey();
+  const marker = localStorage.getItem(CHAT_RESET_MARKER_KEY);
+  if (marker === today) return;
+
+  Object.keys(localStorage).forEach((key) => {
+    if (key.startsWith("chat_msgs_") || key.startsWith("doviz_convos_")) {
+      localStorage.removeItem(key);
+    }
+  });
+  localStorage.setItem(CHAT_RESET_MARKER_KEY, today);
+};
 
 const Messages = () => {
   const navigate = useNavigate();
@@ -30,6 +47,7 @@ const Messages = () => {
 
   // Load current user from sessionStorage
   useEffect(() => {
+    clearPrivateChatStorageIfNeeded();
     try {
       const raw = sessionStorage.getItem("currentUser");
       setCurrentUser(raw ? JSON.parse(raw) : null);
@@ -110,6 +128,11 @@ const Messages = () => {
       ws.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data);
+          if (payload.type === "chat:reset" && (payload.scope === "all" || payload.scope === "private")) {
+            clearPrivateChatStorageIfNeeded();
+            setConversations([]);
+            return;
+          }
           if (payload.type === "users:online" && Array.isArray(payload.users)) {
             setOnlineUsers(payload.users);
           }
