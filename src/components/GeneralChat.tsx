@@ -66,7 +66,15 @@ const GeneralChat = () => {
 
   useEffect(() => {
     let reconnectTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
     let isDisposed = false;
+
+    const clearHeartbeat = () => {
+      if (heartbeatTimer !== null) {
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
 
     const connect = () => {
       const ws = new WebSocket(resolveWsUrl());
@@ -74,10 +82,17 @@ const GeneralChat = () => {
 
       ws.onopen = () => {
         setIsConnected(true);
+        clearHeartbeat();
+        heartbeatTimer = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 15000);
       };
 
       ws.onclose = () => {
         setIsConnected(false);
+        clearHeartbeat();
         wsRef.current = null;
 
         if (!isDisposed) {
@@ -119,6 +134,7 @@ const GeneralChat = () => {
       if (reconnectTimer) {
         window.clearTimeout(reconnectTimer);
       }
+      clearHeartbeat();
       wsRef.current?.close();
       wsRef.current = null;
     };

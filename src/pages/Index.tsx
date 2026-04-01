@@ -217,18 +217,25 @@ const Index = () => {
   }, []);
 
   useEffect(() => {
-    const ws = new WebSocket(resolveWsUrl());
-    listingsWsRef.current = ws;
+    let reconnectTimer: number | null = null;
+    let heartbeatTimer: number | null = null;
+    let isDisposed = false;
 
-    ws.onopen = () => {
-      // Announce presence so the server marks this user as online
+    const clearHeartbeat = () => {
+      if (heartbeatTimer !== null) {
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    };
+
+    const sendPresence = (socket: WebSocket) => {
       try {
         const rawUser = sessionStorage.getItem("currentUser");
         if (rawUser) {
           const u = JSON.parse(rawUser);
           const clientSessionId = getClientSessionId(u?.id);
           if (u?.id) {
-            ws.send(JSON.stringify({
+            socket.send(JSON.stringify({
               type: "user:online",
               userId: u.id,
               clientSessionId,
@@ -237,21 +244,43 @@ const Index = () => {
               location: u.location || null,
               role: u.role || "user",
             }));
-            ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
+            socket.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
           }
         }
       } catch {
         // ignore
       }
     };
-    const handleVisibility = () => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
 
-    ws.onmessage = (event) => {
+    const connect = () => {
+      const ws = new WebSocket(resolveWsUrl());
+      listingsWsRef.current = ws;
+
+      ws.onopen = () => {
+        sendPresence(ws);
+        clearHeartbeat();
+        heartbeatTimer = window.setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 15000);
+      };
+
+      ws.onclose = () => {
+        clearHeartbeat();
+        if (listingsWsRef.current === ws) {
+          listingsWsRef.current = null;
+        }
+        if (!isDisposed) {
+          reconnectTimer = window.setTimeout(connect, 1500);
+        }
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+
+      ws.onmessage = (event) => {
       try {
         const payload = JSON.parse(event.data) as
           | { type: "snapshot"; standardListings?: any[]; arbitrageListings?: any[] }
@@ -349,10 +378,27 @@ const Index = () => {
       }
     };
 
+    };
+
+    const handleVisibility = () => {
+      const ws = listingsWsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: document.hidden ? "user:tab:inactive" : "user:tab:active" }));
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    connect();
+
     return () => {
+      isDisposed = true;
       document.removeEventListener("visibilitychange", handleVisibility);
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+      clearHeartbeat();
+      listingsWsRef.current?.close();
       listingsWsRef.current = null;
-      ws.close();
     };
   }, []);
 
