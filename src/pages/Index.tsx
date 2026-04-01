@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { type OnlineUser } from "@/data/mockUsers";
 import { useNavigate } from "react-router-dom";
-import { Coins, DollarSign, Euro, PoundSterling, X } from "lucide-react";
+import { Check, Coins, DollarSign, Euro, PoundSterling, X } from "lucide-react";
 import { toast } from "sonner";
 import { resolveWsUrl } from "@/lib/network";
 
@@ -681,20 +681,19 @@ const Index = () => {
       {/* İşlem başka kullanıcı tarafından başlatıldığında ilan sahibine modal */}
       <Dialog open={Boolean(transactionModal)} onOpenChange={(open) => { if (!open) setTransactionModal(null); }}>
         <DialogContent className="max-w-lg border-border bg-card/95 backdrop-blur-md">
-          <DialogHeader>
+          <DialogHeader className="text-center">
             <DialogTitle>
               {transactionModal?.viewerRole === "actor"
                 ? "İşleminiz Karşı Tarafa İletildi"
-                : "İlanınıza İşlem Başlatıldı"}
+                : "İlanınıza İşlem Uygulandı"}
             </DialogTitle>
-            <DialogDescription>
-              {transactionModal?.viewerRole === "actor"
-                ? "İşlem detayları ve ilan sahibinin iletişim bilgileri aşağıdadır."
-                : "İlanınıza başka bir kullanıcı tarafından işlem başlatıldı. İşlemi başlatan kullanıcının bilgileri aşağıdadır."}
-            </DialogDescription>
           </DialogHeader>
           {transactionModal && (
             <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2 rounded-lg border border-green-300 bg-green-100 px-3 py-2 text-green-800">
+                <Check className="h-4 w-4" />
+                <span className="text-sm font-medium">İşlem onaylandı</span>
+              </div>
               <div className="rounded-lg border border-border bg-muted/30 p-4">
                 <div className="grid grid-cols-1 gap-2 text-sm">
                   <p>
@@ -704,13 +703,20 @@ const Index = () => {
                     <>
                       {transactionModal.counterpartInfo.officeName && <p><strong>Büro:</strong> {transactionModal.counterpartInfo.officeName}</p>}
                       {transactionModal.counterpartInfo.phone && <p><strong>Telefon:</strong> {transactionModal.counterpartInfo.phone}</p>}
-                      {transactionModal.counterpartInfo.gsm && <p><strong>GSM:</strong> {transactionModal.counterpartInfo.gsm}</p>}
                       {transactionModal.counterpartInfo.email && <p><strong>Email:</strong> {transactionModal.counterpartInfo.email}</p>}
                       {transactionModal.counterpartInfo.location && <p><strong>Lokasyon:</strong> {transactionModal.counterpartInfo.location}</p>}
-                      {transactionModal.counterpartInfo.role && <p><strong>Rol:</strong> {transactionModal.counterpartInfo.role}</p>}
                     </>
                   )}
-                  <p><strong>İşlem:</strong> {transactionModal.listingLabel}</p>
+                  <p>
+                    <strong>Kur:</strong>{" "}
+                    {(() => {
+                      const rawLabel = String(transactionModal.listingLabel || "");
+                      const [leftPart, ratePart] = rawLabel.split("@").map((part) => part.trim());
+                      const currency = (leftPart || "").split(" ")[0] || "-";
+                      const rate = ratePart || "-";
+                      return `${currency} - ${rate}`;
+                    })()}
+                  </p>
                   {transactionModal.transactionAmount && (
                     <p><strong>Miktar:</strong> {transactionModal.transactionAmount}</p>
                   )}
