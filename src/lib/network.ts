@@ -2,8 +2,21 @@ import { apiUrl } from "@/lib/api";
 
 const normalizeBaseUrl = (value?: string) => value?.trim().replace(/\/$/, "") || "";
 
+const DEFAULT_PROD_API_HOST = "api.doviztrade.com";
+
 const rawWsUrl = normalizeBaseUrl(import.meta.env.VITE_CHAT_WS_URL as string | undefined);
 const rawApiBaseUrl = normalizeBaseUrl(import.meta.env.VITE_API_BASE_URL as string | undefined);
+
+export const getClientSessionId = (userId?: string | number) => {
+  let clientSessionId = sessionStorage.getItem("clientSessionId");
+  if (!clientSessionId) {
+    clientSessionId = `${userId || "user"}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    sessionStorage.setItem("clientSessionId", clientSessionId);
+  }
+  return clientSessionId;
+};
+
+export const normalizeUserSocketId = (value?: string | number | null) => String(value ?? "").split(":")[0];
 
 export const resolveWsUrl = () => {
   if (rawWsUrl) {
@@ -13,6 +26,14 @@ export const resolveWsUrl = () => {
   if (rawApiBaseUrl) {
     const wsBaseUrl = rawApiBaseUrl.replace(/^http/i, "ws");
     return `${wsBaseUrl}/ws`;
+  }
+
+  const isKnownProdHost = /(^|\.)doviztrade\.com$/i.test(window.location.hostname)
+    || /(^|\.)ondigitalocean\.app$/i.test(window.location.hostname);
+
+  if (isKnownProdHost) {
+    const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
+    return `${wsProtocol}://${DEFAULT_PROD_API_HOST}/ws`;
   }
 
   const wsProtocol = window.location.protocol === "https:" ? "wss" : "ws";
