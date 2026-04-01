@@ -8,8 +8,8 @@ export interface MyTransaction {
   currencyFlag: string;
   amount: number;
   rate: number;
-  totalTL: number;
   counterparty: string;
+  counterpartyPhone?: string | null;
   time: string;
 }
 
@@ -67,11 +67,12 @@ const MyTransactionsModal = ({ onClose, transactions }: MyTransactionsModalProps
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate">
-                  {tx.type === "buy" ? "Satıcı" : "Alıcı"}: {tx.counterparty} · Kur: ₺{tx.rate.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+                  {tx.type === "buy" ? "Satıcı" : "Alıcı"}: {tx.counterparty}
+                  {tx.counterpartyPhone ? ` · Tel: ${tx.counterpartyPhone}` : ""}
+                  {` · Kur: ₺${tx.rate.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`}
                 </p>
               </div>
               <div className="text-right flex-shrink-0">
-                <p className="text-sm font-semibold text-foreground">₺{tx.totalTL.toLocaleString("tr-TR")}</p>
                 <p className="text-[11px] text-muted-foreground">{tx.time}</p>
               </div>
             </div>

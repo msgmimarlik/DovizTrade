@@ -138,6 +138,24 @@ const CreateListing = () => {
     };
   };
 
+  const currencyOptionLabel = (code: string, label: string) => {
+    const iconClass = "h-4 w-4";
+
+    const icon = (() => {
+      if (code === "USD") return <DollarSign className={iconClass} />;
+      if (code === "EUR") return <Euro className={iconClass} />;
+      if (code === "GBP") return <PoundSterling className={iconClass} />;
+      return <Coins className={iconClass} />;
+    })();
+
+    return (
+      <span className="flex items-center gap-2">
+        {icon}
+        <span>{label}</span>
+      </span>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-4 py-8 max-w-2xl">
@@ -172,11 +190,11 @@ const CreateListing = () => {
                     <SelectValue placeholder="Seçiniz" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="USD">🇺🇸 Amerikan Doları (USD)</SelectItem>
-                    <SelectItem value="EUR">🇪🇺 Euro (EUR)</SelectItem>
-                    <SelectItem value="GBP">🇬🇧 İngiliz Sterlini (GBP)</SelectItem>
-                    <SelectItem value="USDT">🪙 Tether (USDT)</SelectItem>
-                    <SelectItem value="GAU">🥇 Gram Altın</SelectItem>
+                    <SelectItem value="USD">{currencyOptionLabel("USD", "Amerikan Doları (USD)")}</SelectItem>
+                    <SelectItem value="EUR">{currencyOptionLabel("EUR", "Euro (EUR)")}</SelectItem>
+                    <SelectItem value="GBP">{currencyOptionLabel("GBP", "İngiliz Sterlini (GBP)")}</SelectItem>
+                    <SelectItem value="USDT">{currencyOptionLabel("USDT", "Tether (USDT)")}</SelectItem>
+                    <SelectItem value="GAU">{currencyOptionLabel("GAU", "Gram Altın")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -189,12 +207,12 @@ const CreateListing = () => {
                   <SelectValue placeholder="Seçiniz" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="TRY">🇹🇷 Türk Lirası (TRY)</SelectItem>
-                  <SelectItem value="USD">🇺🇸 Amerikan Doları (USD)</SelectItem>
-                  <SelectItem value="EUR">🇪🇺 Euro (EUR)</SelectItem>
-                  <SelectItem value="GBP">🇬🇧 İngiliz Sterlini (GBP)</SelectItem>
-                  <SelectItem value="USDT">🪙 Tether (USDT)</SelectItem>
-                  <SelectItem value="GAU">🥇 Gram Altın</SelectItem>
+                  <SelectItem value="TRY">{currencyOptionLabel("TRY", "Türk Lirası (TRY)")}</SelectItem>
+                  <SelectItem value="USD">{currencyOptionLabel("USD", "Amerikan Doları (USD)")}</SelectItem>
+                  <SelectItem value="EUR">{currencyOptionLabel("EUR", "Euro (EUR)")}</SelectItem>
+                  <SelectItem value="GBP">{currencyOptionLabel("GBP", "İngiliz Sterlini (GBP)")}</SelectItem>
+                  <SelectItem value="USDT">{currencyOptionLabel("USDT", "Tether (USDT)")}</SelectItem>
+                  <SelectItem value="GAU">{currencyOptionLabel("GAU", "Gram Altın")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

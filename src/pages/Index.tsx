@@ -19,7 +19,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { type OnlineUser } from "@/data/mockUsers";
 import { useNavigate } from "react-router-dom";
-import { X } from "lucide-react";
+import { Coins, DollarSign, Euro, PoundSterling, X } from "lucide-react";
 import { toast } from "sonner";
 import { resolveWsUrl } from "@/lib/network";
 
@@ -56,16 +56,36 @@ type CurrentUser = {
   email?: string;
   officeName?: string;
   location?: string;
+  phone?: string;
+  gsm?: string;
 };
 
 type TransactionStartedPayload = {
   type: "transaction:started";
+  viewerRole?: "owner" | "actor";
+  targetUserId?: number;
   actorName: string;
   listingId: number;
   listingLabel?: string;
   ownerName?: string;
   transactionAmount?: number;
+  counterpartyName?: string;
+  counterpartyInfo?: any;
+  ownerInfo?: any;
   actorInfo?: any;
+  transactionType?: "buy" | "sell";
+  currency?: string;
+  currencyFlag?: string;
+  rate?: number;
+};
+
+type TransactionModalState = {
+  viewerRole: "owner" | "actor";
+  counterpartName: string;
+  counterpartInfo?: any;
+  listingId: number;
+  listingLabel?: string;
+  transactionAmount?: number;
 };
 
 const INACTIVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 dakika
@@ -73,25 +93,70 @@ const INACTIVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 dakika
 const sanitizeDisplayName = (name?: string) =>
   (name || "").replace(/[•●🟡]/g, "").replace(/\s+/g, " ").trim();
 
-const getCurrencyIcon = (currency?: string) => {
-  const map: Record<string, string> = {
-    TRY: "🇹🇷",
-    USD: "🇺🇸",
-    EUR: "🇪🇺",
-    GBP: "🇬🇧",
-    USDT: "🪙",
-    GAU: "🥇",
-  };
+const appendUserTransaction = (
+  userId: number,
+  tx: {
+    type: "buy" | "sell";
+    currency: string;
+    currencyFlag?: string;
+    amount: number;
+    rate: number;
+    counterparty: string;
+    counterpartyPhone?: string | null;
+  },
+) => {
+  try {
+    const storageKey = `userTransactions_${userId}`;
+    const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
+    const newTx = {
+      id: Date.now() + Math.floor(Math.random() * 1000),
+      type: tx.type,
+      currency: tx.currency,
+      currencyFlag: tx.currencyFlag || "",
+      amount: tx.amount,
+      rate: tx.rate,
+      counterparty: tx.counterparty,
+      counterpartyPhone: tx.counterpartyPhone || null,
+      time: new Date().toLocaleString("tr-TR"),
+    };
+    localStorage.setItem(storageKey, JSON.stringify([newTx, ...existing].slice(0, 100)));
+  } catch {
+    // ignore storage errors
+  }
+};
 
-  if (!currency) return "";
+const getCurrencyIconElement = (currencyCode?: string) => {
+  const iconClass = "h-4 w-4 inline-block align-middle";
+  const code = (currencyCode || "").toUpperCase().trim();
+
+  if (code === "USD") return <DollarSign className={iconClass} />;
+  if (code === "EUR") return <Euro className={iconClass} />;
+  if (code === "GBP") return <PoundSterling className={iconClass} />;
+  return <Coins className={iconClass} />;
+};
+
+const renderCurrencyCell = (currency?: string) => {
+  if (!currency) return null;
+
   if (currency.includes("/")) {
-    const [base, quote] = currency.split("/").map((c) => c.trim().toUpperCase());
-    const baseIcon = map[base] || "";
-    const quoteIcon = map[quote] || "";
-    return `${baseIcon}${baseIcon && quoteIcon ? "/" : ""}${quoteIcon}`;
+    const [base, quote] = currency.split("/").map((c) => c.trim());
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        {getCurrencyIconElement(base)}
+        <span>{base}</span>
+        <span>/</span>
+        {getCurrencyIconElement(quote)}
+        <span>{quote}</span>
+      </span>
+    );
   }
 
-  return map[currency.toUpperCase()] || "";
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {getCurrencyIconElement(currency)}
+      <span>{currency}</span>
+    </span>
+  );
 };
 
 const getListingDisplayName = (listing: { officeName?: string; userName?: string }) => {
@@ -116,9 +181,14 @@ const Index = () => {
   const [arbitrageListings, setArbitrageListings] = useState<any[]>(mockArbitrageListings);
   const [selectedListing, setSelectedListing] = useState<any | null>(null);
   const [transactionAmount, setTransactionAmount] = useState<string>("");
-  const [transactionModal, setTransactionModal] = useState<null | { actorName: string; actorInfo?: any; listingId: number; listingLabel?: string; transactionAmount?: any }>(null);
+  const [transactionModal, setTransactionModal] = useState<TransactionModalState | null>(null);
   const [transactionMessage, setTransactionMessage] = useState<string>("");
   const listingsWsRef = useRef<WebSocket | null>(null);
+  const currentUserRef = useRef<CurrentUser | null>(null);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   useEffect(() => {
     try {
@@ -230,18 +300,47 @@ const Index = () => {
         }
 
         if (payload.type === "transaction:started") {
-          // Eğer mevcut kullanıcı ilan sahibi ise modal aç
-          if (
-            currentUser &&
-            payload.ownerName &&
-            (payload.ownerName === currentUser.name)
-          ) {
+          const activeUser = currentUserRef.current;
+          if (!activeUser) return;
+
+          // New target-based payload (opens for both owner and actor)
+          if (payload.targetUserId && Number(payload.targetUserId) === Number(activeUser.id)) {
+            if (payload.transactionType && payload.currency && payload.transactionAmount) {
+              appendUserTransaction(activeUser.id, {
+                type: payload.transactionType,
+                currency: payload.currency,
+                currencyFlag: payload.currencyFlag || "",
+                amount: Number(payload.transactionAmount),
+                rate: Number(payload.rate || 0),
+                counterparty: payload.counterpartyName || payload.actorName || payload.ownerName || "Karsi taraf",
+                counterpartyPhone: payload.counterpartyInfo?.phone || payload.counterpartyInfo?.gsm || null,
+              });
+            }
+
             setTransactionModal({
-              actorName: payload.actorName,
+              viewerRole: payload.viewerRole || "owner",
+              counterpartName:
+                payload.counterpartyName ||
+                (payload.viewerRole === "actor" ? payload.ownerName || "Ilan Sahibi" : payload.actorName),
+              counterpartInfo:
+                payload.counterpartyInfo ||
+                (payload.viewerRole === "actor" ? payload.ownerInfo || null : payload.actorInfo || null),
               listingId: payload.listingId,
               listingLabel: payload.listingLabel,
               transactionAmount: payload.transactionAmount,
-              actorInfo: payload.actorInfo || null,
+            });
+            return;
+          }
+
+          // Legacy fallback (owner side only)
+          if (payload.ownerName && payload.ownerName === activeUser.name) {
+            setTransactionModal({
+              viewerRole: "owner",
+              counterpartName: payload.actorName,
+              counterpartInfo: payload.actorInfo || null,
+              listingId: payload.listingId,
+              listingLabel: payload.listingLabel,
+              transactionAmount: payload.transactionAmount,
             });
           }
         }
@@ -267,6 +366,13 @@ const Index = () => {
     return Boolean(currentUser.name && listing.userName === currentUser.name);
   };
 
+  const canStartTransaction = (listing: { ownerId?: number; userName?: string }) => {
+    if (!currentUser) return false;
+    if (currentUser.role === "admin") return true;
+    if (listing.ownerId && listing.ownerId === currentUser.id) return false;
+    return !(currentUser.name && listing.userName === currentUser.name);
+  };
+
   const handleDeleteListing = (listingId: number) => {
     if (!currentUser) return;
 
@@ -288,6 +394,10 @@ const Index = () => {
   };
 
   const handleStartTransaction = (listing: any) => {
+    if (!canStartTransaction(listing)) {
+      toast.error("Kendi ilaniniza islem yapamazsiniz.");
+      return;
+    }
     setSelectedListing(listing);
     setTransactionMessage("");
   };
@@ -318,7 +428,6 @@ const Index = () => {
       : `${listing.currency} ${listing.amount} @ ${listing.rate}`;
 
     const finalAmount = listing.isDivisible ? Number(transactionAmount) : Number(listing.amount);
-    const finalTotalTL = listing.rate ? Math.round(finalAmount * listing.rate) : 0;
 
     ws.send(
       JSON.stringify({
@@ -331,31 +440,14 @@ const Index = () => {
         actorInfo: {
           email: currentUser.email || null,
           officeName: currentUser.officeName || null,
+          phone: currentUser.phone || null,
+          gsm: currentUser.gsm || null,
           role: currentUser.role,
           location: currentUser.location || null,
         },
       }),
     );
 
-    // Save to localStorage for transaction history
-    try {
-      const storageKey = `userTransactions_${currentUser.id}`;
-      const existing = JSON.parse(localStorage.getItem(storageKey) || "[]");
-      const newTx = {
-        id: Date.now(),
-        type: listing.type === "sell" ? "buy" : "sell",
-        currency: listing.currency,
-        currencyFlag: listing.currencyFlag || "",
-        amount: finalAmount,
-        rate: listing.rate || 0,
-        totalTL: finalTotalTL,
-        counterparty: listing.userName,
-        time: new Date().toLocaleString("tr-TR"),
-      };
-      localStorage.setItem(storageKey, JSON.stringify([newTx, ...existing].slice(0, 100)));
-    } catch {
-      // ignore storage errors
-    }
 
     toast.success("Islem baslatildi.");
     setSelectedListing(null);
@@ -414,7 +506,7 @@ const Index = () => {
                   <tbody>
                     {buyListings.map((listing) => (
                       <tr key={listing.id} className="border-b bg-green-100 dark:bg-[#233a2c] transition-colors">
-                        <td className="px-2 py-1 border">{listing.currencyFlag || getCurrencyIcon(listing.currency)} {listing.currency}</td>
+                        <td className="px-2 py-1 border">{renderCurrencyCell(listing.currency)}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
@@ -430,6 +522,8 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <button
                               className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={!canStartTransaction(listing)}
+                              title={!canStartTransaction(listing) ? "Kendi ilaniniza islem yapamazsiniz." : undefined}
                               onClick={() => handleStartTransaction(listing)}
                             >
                               İşlem Yap
@@ -468,7 +562,7 @@ const Index = () => {
                   <tbody>
                     {sellListings.map((listing) => (
                       <tr key={listing.id} className="border-b bg-red-100 dark:bg-[#8B0000] transition-colors">
-                        <td className="px-2 py-1 border">{listing.currencyFlag || getCurrencyIcon(listing.currency)} {listing.currency}</td>
+                        <td className="px-2 py-1 border">{renderCurrencyCell(listing.currency)}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate} ₺</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
@@ -484,6 +578,8 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <button
                               className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                              disabled={!canStartTransaction(listing)}
+                              title={!canStartTransaction(listing) ? "Kendi ilaniniza islem yapamazsiniz." : undefined}
                               onClick={() => handleStartTransaction(listing)}
                             >
                               İşlem Yap
@@ -522,7 +618,7 @@ const Index = () => {
                   <tbody>
                     {sortedArbitrageListings.map((listing) => (
                       <tr key={listing.id} className="border-b bg-sky-100 dark:bg-[#1a3340] transition-colors">
-                        <td className="px-2 py-1 border">{listing.currencyFlag || getCurrencyIcon(listing.currency)} {listing.currency}</td>
+                        <td className="px-2 py-1 border">{renderCurrencyCell(listing.currency)}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
                         <td className="px-2 py-1 border">{listing.rate}</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
@@ -538,7 +634,8 @@ const Index = () => {
                           <div className="flex items-center gap-2">
                             <button
                               className="bg-black text-white px-3 py-1 rounded hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
-                              // ...buton her zaman aktif olacak
+                              disabled={!canStartTransaction(listing)}
+                              title={!canStartTransaction(listing) ? "Kendi ilaniniza islem yapamazsiniz." : undefined}
                               onClick={() => handleStartTransaction(listing)}
                             >
                               İşlem Yap
@@ -585,24 +682,32 @@ const Index = () => {
       <Dialog open={Boolean(transactionModal)} onOpenChange={(open) => { if (!open) setTransactionModal(null); }}>
         <DialogContent className="max-w-lg border-border bg-card/95 backdrop-blur-md">
           <DialogHeader>
-            <DialogTitle>İlanınıza İşlem Başlatıldı</DialogTitle>
+            <DialogTitle>
+              {transactionModal?.viewerRole === "actor"
+                ? "İşleminiz Karşı Tarafa İletildi"
+                : "İlanınıza İşlem Başlatıldı"}
+            </DialogTitle>
             <DialogDescription>
-              İlanınıza başka bir kullanıcı tarafından işlem başlatıldı. İşlemi başlatan kullanıcının bilgileri aşağıdadır.
+              {transactionModal?.viewerRole === "actor"
+                ? "İşlem detayları ve ilan sahibinin iletişim bilgileri aşağıdadır."
+                : "İlanınıza başka bir kullanıcı tarafından işlem başlatıldı. İşlemi başlatan kullanıcının bilgileri aşağıdadır."}
             </DialogDescription>
           </DialogHeader>
           {transactionModal && (
             <div className="space-y-4">
               <div className="rounded-lg border border-border bg-muted/30 p-4">
                 <div className="grid grid-cols-1 gap-2 text-sm">
-                  <p><strong>İşlem Yapan:</strong> {transactionModal.actorName}</p>
-                  {transactionModal.actorInfo && (
+                  <p>
+                    <strong>{transactionModal.viewerRole === "actor" ? "Karşı Kullanıcı:" : "İşlem Yapan:"}</strong> {transactionModal.counterpartName}
+                  </p>
+                  {transactionModal.counterpartInfo && (
                     <>
-                      {transactionModal.actorInfo.email && <p><strong>Email:</strong> {transactionModal.actorInfo.email}</p>}
-                      {transactionModal.actorInfo.officeName && <p><strong>Ofis:</strong> {transactionModal.actorInfo.officeName}</p>}
-                      {transactionModal.actorInfo.phone && <p><strong>Telefon:</strong> {transactionModal.actorInfo.phone}</p>}
-                      {transactionModal.actorInfo.gsm && <p><strong>GSM:</strong> {transactionModal.actorInfo.gsm}</p>}
-                      {transactionModal.actorInfo.role && <p><strong>Rol:</strong> {transactionModal.actorInfo.role}</p>}
-                      {transactionModal.actorInfo.location && <p><strong>Lokasyon:</strong> {transactionModal.actorInfo.location}</p>}
+                      {transactionModal.counterpartInfo.officeName && <p><strong>Büro:</strong> {transactionModal.counterpartInfo.officeName}</p>}
+                      {transactionModal.counterpartInfo.phone && <p><strong>Telefon:</strong> {transactionModal.counterpartInfo.phone}</p>}
+                      {transactionModal.counterpartInfo.gsm && <p><strong>GSM:</strong> {transactionModal.counterpartInfo.gsm}</p>}
+                      {transactionModal.counterpartInfo.email && <p><strong>Email:</strong> {transactionModal.counterpartInfo.email}</p>}
+                      {transactionModal.counterpartInfo.location && <p><strong>Lokasyon:</strong> {transactionModal.counterpartInfo.location}</p>}
+                      {transactionModal.counterpartInfo.role && <p><strong>Rol:</strong> {transactionModal.counterpartInfo.role}</p>}
                     </>
                   )}
                   <p><strong>İşlem:</strong> {transactionModal.listingLabel}</p>
@@ -633,7 +738,7 @@ const Index = () => {
             <div className="space-y-4">
               <div className="rounded-lg border border-border bg-muted/30 p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                  <p><strong>Doviz:</strong> {selectedListing.currencyFlag || getCurrencyIcon(selectedListing.currency)} {selectedListing.currency}</p>
+                  <p><strong>Doviz:</strong> {renderCurrencyCell(selectedListing.currency)}</p>
                   <p><strong>Kullanici:</strong> {selectedListing.userName}</p>
                   <p><strong>Miktar:</strong> {selectedListing.amount}</p>
                   <p><strong>Kur:</strong> {selectedListing.rate}</p>

@@ -7,19 +7,18 @@ interface Transaction {
   currencyFlag: string;
   amount: number;
   rate: number;
-  totalTL: number;
   buyer: string;
   seller: string;
   time: string;
 }
 
 const mockTransactions: Transaction[] = [
-  { id: 1, type: "buy", currency: "USD", currencyFlag: "🇺🇸", amount: 3000, rate: 38.45, totalTL: 115350, buyer: "Murat K.", seller: "Ahmet K.", time: "12 dk önce" },
-  { id: 2, type: "sell", currency: "EUR", currencyFlag: "🇪🇺", amount: 2000, rate: 41.15, totalTL: 82300, buyer: "Elif Y.", seller: "Zeynep A.", time: "28 dk önce" },
-  { id: 3, type: "buy", currency: "GAU", currencyFlag: "🥇", amount: 5, rate: 3840, totalTL: 19200, buyer: "Can B.", seller: "Fatma D.", time: "45 dk önce" },
-  { id: 4, type: "sell", currency: "GBP", currencyFlag: "🇬🇧", amount: 1000, rate: 48.75, totalTL: 48750, buyer: "Ali R.", seller: "Mehmet S.", time: "1 saat önce" },
-  { id: 5, type: "buy", currency: "USD", currencyFlag: "🇺🇸", amount: 8000, rate: 38.50, totalTL: 308000, buyer: "Hasan T.", seller: "Ayşe M.", time: "2 saat önce" },
-  { id: 6, type: "sell", currency: "EUR", currencyFlag: "🇪🇺", amount: 4500, rate: 41.20, totalTL: 185400, buyer: "Burak Ö.", seller: "Elif Y.", time: "3 saat önce" },
+  { id: 1, type: "buy", currency: "USD", currencyFlag: "🇺🇸", amount: 3000, rate: 38.45, buyer: "Murat K.", seller: "Ahmet K.", time: "12 dk önce" },
+  { id: 2, type: "sell", currency: "EUR", currencyFlag: "🇪🇺", amount: 2000, rate: 41.15, buyer: "Elif Y.", seller: "Zeynep A.", time: "28 dk önce" },
+  { id: 3, type: "buy", currency: "GAU", currencyFlag: "🥇", amount: 5, rate: 3840, buyer: "Can B.", seller: "Fatma D.", time: "45 dk önce" },
+  { id: 4, type: "sell", currency: "GBP", currencyFlag: "🇬🇧", amount: 1000, rate: 48.75, buyer: "Ali R.", seller: "Mehmet S.", time: "1 saat önce" },
+  { id: 5, type: "buy", currency: "USD", currencyFlag: "🇺🇸", amount: 8000, rate: 38.50, buyer: "Hasan T.", seller: "Ayşe M.", time: "2 saat önce" },
+  { id: 6, type: "sell", currency: "EUR", currencyFlag: "🇪🇺", amount: 4500, rate: 41.20, buyer: "Burak Ö.", seller: "Elif Y.", time: "3 saat önce" },
 ];
 
 const TransactionHistory = () => {
@@ -39,11 +38,10 @@ const TransactionHistory = () => {
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         {/* Header */}
-        <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1fr_1.5fr_auto] gap-4 px-4 py-3 bg-muted/50 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+        <div className="hidden sm:grid grid-cols-[2fr_1fr_1fr_1.5fr_auto] gap-4 px-4 py-3 bg-muted/50 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
           <span>İşlem</span>
           <span>Miktar</span>
           <span>Kur</span>
-          <span>Toplam (₺)</span>
           <span>Taraflar</span>
           <span>Zaman</span>
         </div>
@@ -52,7 +50,7 @@ const TransactionHistory = () => {
           {mockTransactions.map((tx) => (
             <div
               key={tx.id}
-              className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1fr_1.5fr_auto] gap-2 sm:gap-4 px-4 py-3 hover:bg-muted/30 transition-colors items-center"
+              className="grid grid-cols-1 sm:grid-cols-[2fr_1fr_1fr_1.5fr_auto] gap-2 sm:gap-4 px-4 py-3 hover:bg-muted/30 transition-colors items-center"
             >
               {/* Currency & Type */}
               <div className="flex items-center gap-3">
@@ -82,12 +80,6 @@ const TransactionHistory = () => {
               <div className="text-sm text-foreground">
                 <span className="sm:hidden text-muted-foreground text-xs mr-1">Kur:</span>
                 ₺{tx.rate.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
-              </div>
-
-              {/* Total */}
-              <div className="text-sm font-semibold text-foreground">
-                <span className="sm:hidden text-muted-foreground text-xs font-normal mr-1">Toplam:</span>
-                ₺{tx.totalTL.toLocaleString("tr-TR")}
               </div>
 
               {/* Parties */}
