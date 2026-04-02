@@ -14,19 +14,34 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const chatArchivePath = path.join(__dirname, 'chat-archive.json');
-const allowedOrigins = [
-  'https://doviztrade.com',
-  'https://www.doviztrade.com',
-  'https://sea-lion-app-2w4d4.ondigitalocean.app',
-];
+const allowedOriginHosts = new Set([
+  'doviztrade.com',
+  'www.doviztrade.com',
+  'sea-lion-app-2w4d4.ondigitalocean.app',
+  'localhost',
+  '127.0.0.1',
+]);
+
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  try {
+    const url = new URL(origin);
+    return allowedOriginHosts.has(url.hostname);
+  } catch {
+    return false;
+  }
+};
 
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       callback(null, true);
       return;
     }
-    callback(new Error('Not allowed by CORS'));
+
+    // Do not throw for unknown origins; simply omit CORS headers.
+    callback(null, false);
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
