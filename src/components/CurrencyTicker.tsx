@@ -3,7 +3,7 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 import useTickerData from "@/hooks/useTickerData";
 
 const CurrencyTicker = () => {
-  const { rates, updatedAt, error } = useTickerData();
+  const { rates, updatedAt, error, isLoading } = useTickerData();
   const [flashByKey, setFlashByKey] = useState<Record<string, "up" | "down">>({});
   const prevRatesRef = useRef<Record<string, { buy: number; sell: number }> | null>(null);
   const flashTimersRef = useRef<Record<string, number>>({});
@@ -81,6 +81,8 @@ const CurrencyTicker = () => {
     ? new Date(updatedAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : null;
 
+  const hasRates = rates.length > 0;
+
   return (
     <>
       <div className="flex items-center justify-between mb-2">
@@ -88,7 +90,7 @@ const CurrencyTicker = () => {
           Son guncelleme: {formattedUpdatedAt || "-"}
         </p>
         <span className={`text-[11px] ${error ? "text-red-500" : "text-green-600"}`}>
-          {error ? "Veri uyarisi" : "Canlı"}
+          {isLoading && !hasRates ? "Yukleniyor" : error ? "Veri uyarisi" : "Canlı"}
         </span>
       </div>
       <table className="w-full text-sm mb-6">
@@ -101,7 +103,14 @@ const CurrencyTicker = () => {
           </tr>
         </thead>
         <tbody>
-          {rates.map((rate, i) => (
+          {!hasRates && isLoading && (
+            <tr>
+              <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                Guncel kurlar yukleniyor...
+              </td>
+            </tr>
+          )}
+          {hasRates && rates.map((rate, i) => (
             <>
               <tr key={`${rate.symbol}-${i}`} className={
                 `border-b last:border-b-0`
