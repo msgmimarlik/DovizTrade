@@ -28,6 +28,22 @@ type PersistedTickerData = {
 
 const TICKER_STORAGE_KEY = "ticker:last-success";
 const TRUNCGIL_TICKER_URL = "https://finans.truncgil.com/today.json";
+const rawTickerApiBaseUrl = (import.meta.env.VITE_TICKER_API_BASE_URL as string | undefined)?.trim();
+const normalizedTickerApiBaseUrl = rawTickerApiBaseUrl
+	? rawTickerApiBaseUrl.replace(/\/$/, "")
+	: "";
+
+const tickerApiUrl = (path: string) => {
+	if (!normalizedTickerApiBaseUrl) {
+		return apiUrl(path);
+	}
+
+	if (!path.startsWith("/")) {
+		return `${normalizedTickerApiBaseUrl}/${path}`;
+	}
+
+	return `${normalizedTickerApiBaseUrl}${path}`;
+};
 
 const parseTrNumber = (value: unknown) => {
 	if (value === null || value === undefined) return null;
@@ -187,7 +203,7 @@ const useTickerData = () => {
 			let body: TickerApiResponse = {};
 
 			try {
-				response = await fetch(apiUrl("/api/market/ticker"), {
+				response = await fetch(tickerApiUrl("/api/market/ticker"), {
 					headers: { Accept: "application/json" },
 				});
 
