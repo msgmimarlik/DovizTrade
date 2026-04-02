@@ -158,7 +158,7 @@ const CurrencyTicker = () => {
           {isLoading && !hasRates ? "Yukleniyor" : error ? "Veri uyarisi" : "Canlı"}
         </span>
       </div>
-      <div className="max-h-[430px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-400 [&::-webkit-scrollbar-thumb]:rounded-full mb-6">
+      <div className="max-h-[430px] overflow-y-auto pr-1 mb-6">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-muted-foreground border-b">
