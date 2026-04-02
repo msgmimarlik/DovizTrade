@@ -27,6 +27,17 @@ type PersistedTickerData = {
 
 const TICKER_STORAGE_KEY = "ticker:last-success";
 const TRUNCGIL_TICKER_URL = "https://finans.truncgil.com/today.json";
+const CORE_NAME_MAP: Record<string, string> = {
+	USD: "Dolar",
+	EUR: "Euro",
+	GBP: "Sterlin",
+	GAU: "Gram Altin",
+	G22: "22 Ayar Altin (Gram)",
+	QAU: "Ceyrek Altin",
+	HAU: "Yarim Altin",
+	TAU: "Tam Altin",
+	XAG: "Gumus (Gram)",
+};
 
 const parseTrNumber = (value: unknown) => {
 	if (value === null || value === undefined) return null;
@@ -121,17 +132,24 @@ const normalizeDirectTickerPayload = (payload: Record<string, unknown>): TickerA
 		};
 	};
 
+	const forexRates = Object.entries(source)
+		.filter(([key, value]) => /^[A-Z]{3}$/.test(key) && value && typeof value === "object")
+		.map(([key]) => buildRate(CORE_NAME_MAP[key] ?? key, key, key))
+		.filter((rate): rate is CurrencyRate => Boolean(rate));
+
+	const uniqueForexRates = forexRates.filter(
+		(rate, index, list) => list.findIndex((item) => item.symbol === rate.symbol) === index,
+	);
+
 	const rates = [
-		buildRate("Dolar", "USD", "USD"),
-		buildRate("Euro", "EUR", "EUR"),
-		buildRate("Sterlin", "GBP", "GBP"),
+		...uniqueForexRates,
 		buildRate("Gram Altin", "GAU", "gram-altin"),
 		buildRate("22 Ayar Altin (Gram)", "G22", "22-ayar-bilezik"),
 		buildRate("Ceyrek Altin", "QAU", "ceyrek-altin"),
 		buildRate("Yarim Altin", "HAU", "yarim-altin"),
 		buildRate("Tam Altin", "TAU", "tam-altin"),
 		buildRate("Gumus (Gram)", "XAG", "gumus"),
-	].filter((rate): rate is CurrencyRate => Boolean(rate));
+	].filter((rate, index, list): rate is CurrencyRate => Boolean(rate) && list.findIndex((item) => item?.symbol === rate?.symbol) === index);
 
 	return {
 		rates: appendEurUsdParity(rates),
