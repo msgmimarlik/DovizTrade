@@ -274,6 +274,8 @@ const CurrencyTicker = () => {
           </tr>
         </tbody>
       </table>
+
+      {/* İkinci piyasa verisi tablosu kaldırıldı */}
     </>
   );
 };
