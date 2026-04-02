@@ -1210,7 +1210,7 @@ app.get('/api/market/ticker', async (_req, res) => {
   }
 });
 
-const PORT = 3001;
+const PORT = Number(process.env.PORT ?? 3001);
 app.listen(PORT, () => {
   console.log('Server ' + PORT + ' portunda calisiyor.');
 });

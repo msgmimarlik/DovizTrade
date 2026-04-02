@@ -120,7 +120,7 @@ const scheduleDailyChatReset = () => {
 await loadState();
 await loadChatArchive();
 
-const PORT = Number(process.env.CHAT_WS_PORT ?? 8787);
+const PORT = Number(process.env.PORT ?? process.env.CHAT_WS_PORT ?? 8787);
 const INACTIVE_LISTING_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_SESSIONS_PER_USER = 2;
 

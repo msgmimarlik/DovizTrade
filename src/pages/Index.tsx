@@ -782,13 +782,18 @@ const Index = () => {
                           <span className="text-muted-foreground w-10 shrink-0">{tx.time}</span>
                           <span className="text-base shrink-0">{tx.currencyFlag || "💱"}</span>
                           <div className="flex-1 min-w-0">
-                            <span className="font-semibold text-foreground">{tx.currency}</span>
-                            {tx.amount > 0 && (
-                              <span className="text-muted-foreground"> · {Number(tx.amount).toLocaleString("tr-TR")}</span>
-                            )}
-                            {tx.rate != null && (
-                              <span className="text-muted-foreground"> @ {Number(tx.rate).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</span>
-                            )}
+                            <div className="truncate">
+                              <span className="font-semibold text-foreground">{tx.currency}</span>
+                              {tx.amount > 0 && (
+                                <span className="text-muted-foreground"> · {Number(tx.amount).toLocaleString("tr-TR")}</span>
+                              )}
+                              {tx.rate != null && (
+                                <span className="text-muted-foreground"> @ {Number(tx.rate).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</span>
+                              )}
+                              {(tx.actorName || tx.ownerName) && (
+                                <span className="text-muted-foreground"> · {sanitizeDisplayName(tx.actorName) || "Kullanici"} ⇄ {sanitizeDisplayName(tx.ownerName) || "Ilan Sahibi"}</span>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
