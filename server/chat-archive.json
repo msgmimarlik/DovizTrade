@@ -1,0 +1,175 @@
+{
+  "general": [
+    {
+      "id": "g-1775013316351",
+      "userId": null,
+      "userName": "Murat Secmen",
+      "text": "selam",
+      "sentAt": "2026-04-01T03:15:16.351Z"
+    },
+    {
+      "id": "g-1775026653010",
+      "userId": null,
+      "userName": "PALALI DÖVİZ",
+      "text": "SELAMLAR HAYIRI İŞLER",
+      "sentAt": "2026-04-01T06:57:33.007Z"
+    },
+    {
+      "id": "g-1775026709136",
+      "userId": null,
+      "userName": "PALALI YAŞAR",
+      "text": "hayırlı işler abe",
+      "sentAt": "2026-04-01T06:58:29.136Z"
+    },
+    {
+      "id": "g-1775040078848",
+      "userId": null,
+      "userName": "PALALI DÖVİZ",
+      "text": "selam",
+      "sentAt": "2026-04-01T10:41:18.848Z"
+    },
+    {
+      "id": "g-1775063668492",
+      "userId": null,
+      "userName": "PALALI DÖVİZ",
+      "text": "merhaba abe",
+      "sentAt": "2026-04-01T17:14:28.492Z"
+    },
+    {
+      "id": "g-1775124327505",
+      "userId": null,
+      "userName": "PALALI DÖVİZ",
+      "text": "hayırlı işler",
+      "sentAt": "2026-04-02T10:05:27.505Z"
+    },
+    {
+      "id": "g-1775124343994",
+      "userId": null,
+      "userName": "PALALI DÖVİZ",
+      "text": "BEREKETLİ  OLSUN",
+      "sentAt": "2026-04-02T10:05:43.994Z"
+    }
+  ],
+  "private": [
+    {
+      "id": "p-1775063684009-qy9xj7",
+      "fromId": "1",
+      "toId": "4",
+      "fromName": "Murat Secmen",
+      "text": "selam",
+      "sentAt": "2026-04-01T17:14:44.009Z"
+    },
+    {
+      "id": "p-1775063690920-s850nl",
+      "fromId": "4",
+      "toId": "1",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "hhh",
+      "sentAt": "2026-04-01T17:14:50.920Z"
+    },
+    {
+      "id": "p-1775063698677-yzvdma",
+      "fromId": "1",
+      "toId": "4",
+      "fromName": "Murat Secmen",
+      "text": "merhana",
+      "sentAt": "2026-04-01T17:14:58.677Z"
+    },
+    {
+      "id": "p-1775063703869-r0dvm8",
+      "fromId": "4",
+      "toId": "1",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "naber abe",
+      "sentAt": "2026-04-01T17:15:03.869Z"
+    },
+    {
+      "id": "p-1775065047308-2xc6pk",
+      "fromId": "3",
+      "toId": "4",
+      "fromName": "Seçmen",
+      "text": "merhablar",
+      "sentAt": "2026-04-01T17:37:27.308Z"
+    },
+    {
+      "id": "p-1775065132954-5wxg8y",
+      "fromId": "4",
+      "toId": "3",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "kraaal",
+      "sentAt": "2026-04-01T17:38:52.954Z"
+    },
+    {
+      "id": "p-1775065139910-7v665t",
+      "fromId": "3",
+      "toId": "4",
+      "fromName": "Seçmen",
+      "text": "merhba",
+      "sentAt": "2026-04-01T17:38:59.910Z"
+    },
+    {
+      "id": "p-1775065140235-7tndvw",
+      "fromId": "4",
+      "toId": "3",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "je",
+      "sentAt": "2026-04-01T17:39:00.235Z"
+    },
+    {
+      "id": "p-1775065141321-qikkil",
+      "fromId": "4",
+      "toId": "3",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "t",
+      "sentAt": "2026-04-01T17:39:01.321Z"
+    },
+    {
+      "id": "p-1775065142302-zaxn09",
+      "fromId": "4",
+      "toId": "3",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "t",
+      "sentAt": "2026-04-01T17:39:02.302Z"
+    },
+    {
+      "id": "p-1775065142945-kf1e2s",
+      "fromId": "4",
+      "toId": "3",
+      "fromName": "MEHMET ALİ ERGÜN",
+      "text": "t",
+      "sentAt": "2026-04-01T17:39:02.945Z"
+    },
+    {
+      "id": "p-1775065157573-49z0ja",
+      "fromId": "3",
+      "toId": "4",
+      "fromName": "Seçmen",
+      "text": "selam",
+      "sentAt": "2026-04-01T17:39:17.573Z"
+    },
+    {
+      "id": "p-1775135195284-awcwy8",
+      "fromId": "3",
+      "toId": "4",
+      "fromName": "Seçmen",
+      "text": "Selam can",
+      "sentAt": "2026-04-02T13:06:35.284Z"
+    },
+    {
+      "id": "p-1775135213084-yo9pzd",
+      "fromId": "1",
+      "toId": "3",
+      "fromName": "Murat Secmen",
+      "text": "merhaba",
+      "sentAt": "2026-04-02T13:06:53.084Z"
+    },
+    {
+      "id": "p-1775135276064-qvnvey",
+      "fromId": "3",
+      "toId": "4",
+      "fromName": "Seçmen",
+      "text": "Selam can",
+      "sentAt": "2026-04-02T13:07:56.064Z"
+    }
+  ]
+}
