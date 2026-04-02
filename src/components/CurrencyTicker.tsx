@@ -11,9 +11,6 @@ const CurrencyTicker = () => {
   const [hasOverflow, setHasOverflow] = useState(false);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
 
-  const metalSymbols = new Set(["GAU", "QAU", "HAU", "TAU", "XAG", "G22"]);
-  const preferredFxOrder = ["USD", "EUR", "EURUSD", "GBP"];
-
   const displayRates = useMemo(() => {
     const bySymbol = new Map(rates.map((rate) => [rate.symbol, rate]));
 
@@ -34,20 +31,9 @@ const CurrencyTicker = () => {
       };
     };
 
-    const fxRows = rates
-      .filter((rate) => !metalSymbols.has(rate.symbol))
-      .sort((a, b) => {
-        const aPriority = preferredFxOrder.indexOf(a.symbol);
-        const bPriority = preferredFxOrder.indexOf(b.symbol);
-
-        if (aPriority !== -1 || bPriority !== -1) {
-          if (aPriority === -1) return 1;
-          if (bPriority === -1) return -1;
-          if (aPriority !== bPriority) return aPriority - bPriority;
-        }
-
-        return a.symbol.localeCompare(b.symbol, "tr");
-      });
+    const fxRows = ["USD", "EUR", "EURUSD", "GBP"]
+      .map((symbol) => bySymbol.get(symbol))
+      .filter((rate): rate is NonNullable<typeof rate> => Boolean(rate));
 
     const coreGoldRows = ["GAU", "QAU", "HAU", "TAU"]
       .map((symbol) => bySymbol.get(symbol))
@@ -248,7 +234,7 @@ const CurrencyTicker = () => {
                   {formatRate(rate.symbol, rate.sell)}
                 </td>
               </tr>
-              {((displayRates.indexOf(rate) === fxRows.length - 1) || rate.symbol === "GREMSE_OLD") && (
+              {(rate.symbol === "GBP" || rate.symbol === "GREMSE_OLD") && (
                 <tr>
                   <td colSpan={3} className="p-0">
                     <div className="border-b-4 border-primary"></div>
