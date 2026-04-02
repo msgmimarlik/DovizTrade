@@ -28,11 +28,49 @@ type TickerApiResponse = {
 	warning?: string;
 };
 
+type PersistedTickerData = {
+	rates: CurrencyRate[];
+	updatedAt: string | null;
+	source: string | null;
+};
+
+const TICKER_STORAGE_KEY = "ticker:last-success";
+
+const readPersistedTicker = (): PersistedTickerData | null => {
+	if (typeof window === "undefined") return null;
+
+	try {
+		const raw = window.localStorage.getItem(TICKER_STORAGE_KEY);
+		if (!raw) return null;
+		const parsed = JSON.parse(raw) as Partial<PersistedTickerData>;
+		if (!Array.isArray(parsed.rates) || parsed.rates.length === 0) return null;
+
+		return {
+			rates: parsed.rates as CurrencyRate[],
+			updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : null,
+			source: typeof parsed.source === "string" ? parsed.source : null,
+		};
+	} catch {
+		return null;
+	}
+};
+
+const writePersistedTicker = (data: PersistedTickerData) => {
+	if (typeof window === "undefined") return;
+
+	try {
+		window.localStorage.setItem(TICKER_STORAGE_KEY, JSON.stringify(data));
+	} catch {
+		// Storage errors should not block ticker rendering.
+	}
+};
+
 const useTickerData = () => {
-	const [rates, setRates] = useState<CurrencyRate[]>(DEFAULT_RATES);
-	const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+	const persisted = readPersistedTicker();
+	const [rates, setRates] = useState<CurrencyRate[]>(persisted?.rates ?? DEFAULT_RATES);
+	const [updatedAt, setUpdatedAt] = useState<string | null>(persisted?.updatedAt ?? null);
 	const [error, setError] = useState<string | null>(null);
-	const [source, setSource] = useState<string | null>(null);
+	const [source, setSource] = useState<string | null>(persisted?.source ?? null);
 
 	const load = useCallback(async () => {
 		try {
@@ -41,18 +79,38 @@ const useTickerData = () => {
 			});
 
 			const rawBody = await response.text();
-			const body = (rawBody ? JSON.parse(rawBody) : {}) as TickerApiResponse;
+			let body: TickerApiResponse = {};
+			try {
+				body = (rawBody ? JSON.parse(rawBody) : {}) as TickerApiResponse;
+			} catch {
+				body = {};
+			}
+
+			let nextRates = rates;
+			let nextUpdatedAt = updatedAt;
+			let nextSource = source;
 
 			if (Array.isArray(body.rates) && body.rates.length > 0) {
+				nextRates = body.rates;
 				setRates(body.rates);
 			}
 
 			if (body.updatedAt) {
+				nextUpdatedAt = body.updatedAt;
 				setUpdatedAt(body.updatedAt);
 			}
 
 			if (body.source) {
+				nextSource = body.source;
 				setSource(body.source);
+			}
+
+			if (Array.isArray(body.rates) && body.rates.length > 0) {
+				writePersistedTicker({
+					rates: nextRates,
+					updatedAt: nextUpdatedAt,
+					source: nextSource,
+				});
 			}
 
 			if (!response.ok && !Array.isArray(body.rates)) {
