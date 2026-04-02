@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import mysql from 'mysql2';
 import bodyParser from 'body-parser';
@@ -5,6 +6,8 @@ import bcrypt from 'bcrypt';
 import cors from 'cors';
 import { promises as fs } from 'fs';
 import path from 'path';
+import http from 'http';
+import https from 'https';
 import { fileURLToPath } from 'url';
 
 const app = express();
@@ -47,6 +50,393 @@ const dbp = db.promise();
 const query = async (sql, params = []) => {
   const [rows] = await dbp.query(sql, params);
   return rows;
+};
+
+const MARKET_TICKER_CACHE_MS = 0;
+
+const DEFAULT_MARKET_RATES = [
+  { name: 'Dolar', symbol: 'USD', buy: 38.42, sell: 38.55, change: 0.35 },
+  { name: 'Euro', symbol: 'EUR', buy: 41.18, sell: 41.34, change: -0.12 },
+  { name: 'Sterlin', symbol: 'GBP', buy: 48.76, sell: 48.95, change: 0.22 },
+  { name: 'Gram Altin', symbol: 'GAU', buy: 3842, sell: 3860, change: 1.15 },
+  { name: '22 Ayar Altin (Gram)', symbol: 'G22', buy: 3520, sell: 3550, change: 0.6 },
+  { name: 'Ceyrek Altin', symbol: 'QAU', buy: 6350, sell: 6450, change: 0.85 },
+  { name: 'Yarim Altin', symbol: 'HAU', buy: 12700, sell: 12900, change: 0.9 },
+  { name: 'Tam Altin', symbol: 'TAU', buy: 25400, sell: 25800, change: 0.95 },
+  { name: 'Gumus (Gram)', symbol: 'XAG', buy: 32.1, sell: 32.6, change: -0.2 },
+];
+
+let marketTickerCache = {
+  payload: null,
+  fetchedAt: 0,
+};
+
+const parseTrNumber = (value) => {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const normalized = String(value)
+    .replace(/%/g, '')
+    .replace(/\./g, '')
+    .replace(/,/g, '.')
+    .replace(/\s+/g, '')
+    .trim();
+  const numeric = Number(normalized);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
+const parseUpstreamUpdateDateToIso = (value) => {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  // Truncgil format example: "2026-04-02 16:30:07" in TR timezone
+  const normalized = raw.replace(' ', 'T');
+  const date = new Date(`${normalized}+03:00`);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toISOString();
+  }
+  return null;
+};
+
+const applyFixedHalfSpread = (rates) => {
+  const totalSpreadBySymbol = {
+    USD: 0.08,
+    EUR: 0.2,
+    GBP: 0.28,
+  };
+  const goldSymbols = new Set(['GAU', 'G22', 'QAU', 'HAU', 'TAU']);
+  const goldTotalSpreadPercent = 0.0224; // ~2.24% total spread (about 150 TL near 6700 TL)
+  const defaultTotalSpread = 0.04;
+
+  if (!Array.isArray(rates)) return rates;
+  return rates.map((rate) => {
+    const base = Number(rate.buy);
+    if (!Number.isFinite(base) || base <= 0) {
+      return rate;
+    }
+
+    const symbol = String(rate.symbol || '').toUpperCase();
+    const totalSpread = goldSymbols.has(symbol)
+      ? base * goldTotalSpreadPercent
+      : Number(totalSpreadBySymbol[symbol] ?? defaultTotalSpread);
+    const halfSpread = totalSpread / 2;
+
+    const buy = Number(Math.max(base - halfSpread, 0).toFixed(6));
+    const sell = Number((base + halfSpread).toFixed(6));
+    return {
+      ...rate,
+      buy,
+      sell,
+    };
+  });
+};
+
+const OUNCE_TO_GRAM = 31.1034768;
+const YAHOO_CHANGE_CACHE_MS = 0;
+
+let yahoo24hChangeCache = {
+  map: null,
+  fetchedAt: 0,
+};
+
+const getYahooSeriesPoints = async (symbol, interval = '1h', range = '2d') => {
+  const data = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}&ts=${Date.now()}`);
+  const result = data?.chart?.result?.[0];
+  const timestamps = result?.timestamp;
+  const closes = result?.indicators?.quote?.[0]?.close;
+  if (!Array.isArray(timestamps) || !Array.isArray(closes)) return [];
+
+  return timestamps
+    .map((t, i) => ({ t: Number(t), v: Number(closes[i]) }))
+    .filter((p) => Number.isFinite(p.t) && Number.isFinite(p.v) && p.v > 0);
+};
+
+const getYahoo24hChangePercent = async (symbol) => {
+  const points = await getYahooSeriesPoints(symbol, '1m', '2d');
+  if (points.length < 2) return null;
+
+  const latest = points[points.length - 1];
+  const targetTs = latest.t - 24 * 60 * 60;
+  let base = null;
+
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    if (points[i].t <= targetTs) {
+      base = points[i];
+      break;
+    }
+  }
+
+  if (!base) {
+    base = points[0];
+  }
+
+  if (!base || !Number.isFinite(base.v) || base.v <= 0) return null;
+  const pct = ((latest.v - base.v) / base.v) * 100;
+  return Number.isFinite(pct) ? Number(pct.toFixed(2)) : null;
+};
+
+const getYahoo24hChangeMap = async () => {
+  const now = Date.now();
+  if (yahoo24hChangeCache.map && now - yahoo24hChangeCache.fetchedAt < YAHOO_CHANGE_CACHE_MS) {
+    return yahoo24hChangeCache.map;
+  }
+
+  const entries = [
+    ['USD', 'USDTRY=X'],
+    ['EUR', 'EURTRY=X'],
+    ['GBP', 'GBPTRY=X'],
+    ['GAU', 'GC=F'],
+    ['XAG', 'SI=F'],
+  ];
+
+  const resolved = await Promise.all(entries.map(async ([symbol, yahooSymbol]) => {
+    try {
+      const value = await getYahoo24hChangePercent(yahooSymbol);
+      return [symbol, value];
+    } catch {
+      return [symbol, null];
+    }
+  }));
+
+  const map = Object.fromEntries(resolved.filter(([, value]) => Number.isFinite(value)));
+  // Gold-derived rows use gram gold change.
+  if (Number.isFinite(map.GAU)) {
+    map.G22 = map.GAU;
+    map.QAU = map.GAU;
+    map.HAU = map.GAU;
+    map.TAU = map.GAU;
+  }
+  // USDT tracks USD side for display purposes.
+  if (Number.isFinite(map.USD)) {
+    map.USDT = map.USD;
+  }
+
+  yahoo24hChangeCache = {
+    map,
+    fetchedAt: now,
+  };
+  return map;
+};
+
+const apply24hChanges = (payload, changeMap) => {
+  if (!payload || !Array.isArray(payload.rates) || !changeMap) return payload;
+
+  const rates = payload.rates.map((rate) => {
+    const symbol = String(rate.symbol || '').toUpperCase();
+    const nextChange = changeMap[symbol];
+    if (!Number.isFinite(nextChange)) return rate;
+    return {
+      ...rate,
+      change: nextChange,
+    };
+  });
+
+  return {
+    ...payload,
+    rates,
+  };
+};
+
+const getYahooLatestClose = async (symbol) => {
+  const data = await fetchJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1m&range=1d&ts=${Date.now()}`);
+  const closes = data?.chart?.result?.[0]?.indicators?.quote?.[0]?.close;
+  if (!Array.isArray(closes)) return null;
+
+  for (let i = closes.length - 1; i >= 0; i -= 1) {
+    const value = Number(closes[i]);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+
+  return null;
+};
+
+const enrichMetalsFromYahoo = async (payload) => {
+  if (!payload || !Array.isArray(payload.rates)) return payload;
+
+  const usdTry = Number(payload.rates.find((rate) => rate.symbol === 'USD')?.buy);
+  if (!Number.isFinite(usdTry) || usdTry <= 0) {
+    return payload;
+  }
+
+  let goldUsdOunce = null;
+  let silverUsdOunce = null;
+
+  try {
+    [goldUsdOunce, silverUsdOunce] = await Promise.all([
+      getYahooLatestClose('GC=F'),
+      getYahooLatestClose('SI=F'),
+    ]);
+  } catch {
+    return payload;
+  }
+
+  const gauTry = Number.isFinite(goldUsdOunce) && goldUsdOunce > 0
+    ? (goldUsdOunce * usdTry) / OUNCE_TO_GRAM
+    : null;
+
+  const xagTry = Number.isFinite(silverUsdOunce) && silverUsdOunce > 0
+    ? (silverUsdOunce * usdTry) / OUNCE_TO_GRAM
+    : null;
+
+  if (!gauTry && !xagTry) {
+    return payload;
+  }
+
+  const currentGau = payload.rates.find((rate) => rate.symbol === 'GAU');
+  const gauScale = currentGau && Number(currentGau.buy) > 0 && gauTry
+    ? gauTry / Number(currentGau.buy)
+    : null;
+
+  const rates = payload.rates.map((rate) => {
+    if (rate.symbol === 'GAU' && gauTry) {
+      return { ...rate, buy: gauTry, sell: gauTry };
+    }
+
+    if (rate.symbol === 'XAG' && xagTry) {
+      return { ...rate, buy: xagTry, sell: xagTry };
+    }
+
+    if (gauScale && ['G22', 'QAU', 'HAU', 'TAU'].includes(rate.symbol)) {
+      const scaled = Number(rate.buy) * gauScale;
+      return { ...rate, buy: scaled, sell: scaled };
+    }
+
+    return rate;
+  });
+
+  return {
+    ...payload,
+    rates,
+    metalsSource: 'yahoo-futures',
+  };
+};
+
+const enrichFxFromYahoo = async (payload) => {
+  if (!payload || !Array.isArray(payload.rates)) return payload;
+
+  let usdTry = null;
+  let eurTry = null;
+  let gbpTry = null;
+
+  try {
+    [usdTry, eurTry, gbpTry] = await Promise.all([
+      getYahooLatestClose('USDTRY=X'),
+      getYahooLatestClose('EURTRY=X'),
+      getYahooLatestClose('GBPTRY=X'),
+    ]);
+  } catch {
+    return payload;
+  }
+
+  const rates = payload.rates.map((rate) => {
+    if (rate.symbol === 'USD' && Number.isFinite(usdTry) && usdTry > 0) {
+      return { ...rate, buy: usdTry, sell: usdTry };
+    }
+    if (rate.symbol === 'EUR' && Number.isFinite(eurTry) && eurTry > 0) {
+      return { ...rate, buy: eurTry, sell: eurTry };
+    }
+    if (rate.symbol === 'GBP' && Number.isFinite(gbpTry) && gbpTry > 0) {
+      return { ...rate, buy: gbpTry, sell: gbpTry };
+    }
+    return rate;
+  });
+
+  return {
+    ...payload,
+    rates,
+    fxSource: 'yahoo-fx',
+  };
+};
+
+const fetchJson = async (url) => {
+  if (typeof fetch === 'function') {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      throw new Error(`Upstream HTTP ${response.status}`);
+    }
+    return response.json();
+  }
+
+  const transport = url.startsWith('https') ? https : http;
+  return new Promise((resolve, reject) => {
+    const req = transport.get(url, { headers: { Accept: 'application/json' } }, (res) => {
+      let raw = '';
+      res.on('data', (chunk) => {
+        raw += chunk;
+      });
+      res.on('end', () => {
+        if (!res.statusCode || res.statusCode >= 400) {
+          reject(new Error(`Upstream HTTP ${res.statusCode || 0}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(raw));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(8000, () => {
+      req.destroy(new Error('Upstream timeout'));
+    });
+  });
+};
+
+const normalizeMarketTickerPayload = (upstreamData) => {
+  const source = upstreamData && typeof upstreamData === 'object' ? upstreamData : {};
+
+  const findEntry = (keys) => {
+    for (const key of keys) {
+      if (source[key] && typeof source[key] === 'object') {
+        return source[key];
+      }
+    }
+    return null;
+  };
+
+  const buildRate = (name, symbol, keys) => {
+    const entry = findEntry(keys);
+    if (!entry) return null;
+    const buy = parseTrNumber(entry.Alış ?? entry.Alis ?? entry.alis ?? entry.buy);
+    const sell = parseTrNumber(entry.Satış ?? entry.Satis ?? entry.satis ?? entry.sell);
+    const change = parseTrNumber(entry.Değişim ?? entry.Degisim ?? entry.degisim ?? entry.change ?? 0) ?? 0;
+    const finalBuy = buy ?? sell;
+    const finalSell = sell ?? buy;
+    if (finalBuy === null || finalSell === null) {
+      return null;
+    }
+    return { name, symbol, buy: finalBuy, sell: finalSell, change };
+  };
+
+  const rates = [
+    buildRate('Dolar', 'USD', ['USD', 'ABD DOLARI', 'Dolar']),
+    buildRate('Euro', 'EUR', ['EUR', 'EURO', 'Euro']),
+    buildRate('Sterlin', 'GBP', ['GBP', 'İNGİLİZ STERLİNİ', 'INGILIZ STERLINI', 'Sterlin']),
+    buildRate('Gram Altin', 'GAU', ['gram-altin', 'GRAM ALTIN', 'Gram Altin']),
+    buildRate('22 Ayar Altin (Gram)', 'G22', ['altin-22', '22 AYAR BILEZIK', '22 Ayar Altin']),
+    buildRate('Ceyrek Altin', 'QAU', ['ceyrek-altin', 'ÇEYREK ALTIN', 'CEYREK ALTIN']),
+    buildRate('Yarim Altin', 'HAU', ['yarim-altin', 'YARIM ALTIN']),
+    buildRate('Tam Altin', 'TAU', ['tam-altin', 'TAM ALTIN']),
+    buildRate('Gumus (Gram)', 'XAG', ['gumus', 'gümüş', 'GUMUS']),
+  ].filter(Boolean);
+
+  if (rates.length === 0) {
+    throw new Error('No valid market rows in upstream payload');
+  }
+
+  const upstreamUpdatedAt = parseUpstreamUpdateDateToIso(source.Update_Date);
+  const fetchedAt = new Date().toISOString();
+
+  return {
+    rates,
+    updatedAt: fetchedAt,
+    source: 'truncgil',
+    fetchedAt,
+    upstreamUpdatedAt: upstreamUpdatedAt || null,
+  };
 };
 
 const readChatArchive = async () => {
@@ -776,6 +1166,74 @@ app.get('/api/currencies', (req, res) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(results);
   });
+});
+
+app.get('/api/market/ticker', async (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+
+  const now = Date.now();
+  const hasFreshCache = marketTickerCache.payload && now - marketTickerCache.fetchedAt < MARKET_TICKER_CACHE_MS;
+  if (hasFreshCache) {
+    return res.json({
+      ...marketTickerCache.payload,
+      cached: true,
+    });
+  }
+
+  try {
+    let basePayload = null;
+
+    try {
+      const truncgilRaw = await fetchJson(`https://finans.truncgil.com/today.json?ts=${Date.now()}`);
+      basePayload = normalizeMarketTickerPayload(truncgilRaw);
+    } catch {
+      basePayload = {
+        rates: DEFAULT_MARKET_RATES,
+        updatedAt: new Date().toISOString(),
+        source: 'default',
+      };
+    }
+
+    const withYahooFx = await enrichFxFromYahoo(basePayload);
+    const withMetals = await enrichMetalsFromYahoo(withYahooFx);
+    const changeMap = await getYahoo24hChangeMap();
+    const with24hChange = apply24hChanges(withMetals, changeMap);
+    const withSpread = {
+      ...with24hChange,
+      source: 'yahoo',
+      rates: applyFixedHalfSpread(with24hChange.rates),
+    };
+
+    console.log('[ticker] provider=yahoo ok updatedAt=%s', withSpread.updatedAt);
+    marketTickerCache = {
+      payload: withSpread,
+      fetchedAt: now,
+    };
+
+    return res.json({
+      ...withSpread,
+      cached: false,
+    });
+  } catch (error) {
+    const fallbackPayload = marketTickerCache.payload || {
+      rates: DEFAULT_MARKET_RATES,
+      updatedAt: new Date().toISOString(),
+      source: 'default',
+    };
+    const fallbackWithSpread = {
+      ...fallbackPayload,
+      rates: applyFixedHalfSpread(fallbackPayload.rates),
+    };
+
+    return res.status(200).json({
+      ...fallbackWithSpread,
+      cached: Boolean(marketTickerCache.payload),
+      stale: true,
+      warning: error instanceof Error ? error.message : 'ticker-fallback',
+    });
+  }
 });
 
 const PORT = 3001;
