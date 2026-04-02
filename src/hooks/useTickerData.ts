@@ -7,12 +7,16 @@ export interface CurrencyRate {
 	buy: number;
 	sell: number;
 	change: number;
+	upstreamBuy?: number | null;
+	upstreamSell?: number | null;
+	spread?: number | null;
 }
 
 type TickerApiResponse = {
 	rates?: CurrencyRate[];
 	updatedAt?: string;
 	source?: string;
+	upstreamSource?: string;
 	warning?: string;
 };
 

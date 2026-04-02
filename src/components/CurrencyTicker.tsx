@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import useTickerData from "@/hooks/useTickerData";
 
@@ -8,12 +8,67 @@ const CurrencyTicker = () => {
   const prevRatesRef = useRef<Record<string, { buy: number; sell: number }> | null>(null);
   const flashTimersRef = useRef<Record<string, number>>({});
 
+  const displayRates = useMemo(() => {
+    const bySymbol = new Map(rates.map((rate) => [rate.symbol, rate]));
+
+    const makeFromGauge = (name: string, symbol: string, factor: number) => {
+      const gau = bySymbol.get("GAU");
+      if (!gau) return null;
+
+      const buy = Number((gau.buy * factor).toFixed(2));
+      const sell = Number((gau.sell * factor).toFixed(2));
+      if (!Number.isFinite(buy) || !Number.isFinite(sell)) return null;
+
+      return {
+        ...gau,
+        name,
+        symbol,
+        buy,
+        sell,
+      };
+    };
+
+    const fxRows = ["USD", "EUR", "EURUSD", "GBP"]
+      .map((symbol) => bySymbol.get(symbol))
+      .filter((rate): rate is NonNullable<typeof rate> => Boolean(rate));
+
+    const coreGoldRows = ["GAU", "QAU", "HAU", "TAU"]
+      .map((symbol) => bySymbol.get(symbol))
+      .filter((rate): rate is NonNullable<typeof rate> => Boolean(rate));
+
+    const goldRows = [
+      makeFromGauge("22 Ayar", "G22P", 22 / 24),
+      makeFromGauge("14 Ayar", "G14P", 14 / 24),
+      makeFromGauge("Yeni Çeyrek", "QAU_NEW", 1.754),
+      makeFromGauge("Eski Çeyrek", "QAU_OLD", 1.745),
+      makeFromGauge("Yeni Yarım", "HAU_NEW", 3.508),
+      makeFromGauge("Eski Yarım", "HAU_OLD", 3.490),
+      makeFromGauge("Yeni Tam", "TAU_NEW", 7.016),
+      makeFromGauge("Eski Tam", "TAU_OLD", 6.980),
+      makeFromGauge("Yeni Ata", "ATA_NEW", 7.216),
+      makeFromGauge("Eski Ata", "ATA_OLD", 7.180),
+      makeFromGauge("Yeni Ata5", "ATA5_NEW", 36.08),
+      makeFromGauge("Eski Ata5", "ATA5_OLD", 35.90),
+      makeFromGauge("Yeni Gremse", "GREMSE_NEW", 17.54),
+      makeFromGauge("Eski Gremse", "GREMSE_OLD", 17.45),
+    ].filter((rate): rate is NonNullable<typeof rate> => Boolean(rate));
+
+    const silver = bySymbol.get("XAG");
+
+    return [
+      ...fxRows,
+      ...coreGoldRows,
+      ...goldRows,
+      ...(silver ? [silver] : []),
+    ];
+  }, [rates]);
+
   useEffect(() => {
     const prevRates = prevRatesRef.current;
     if (prevRates) {
       const nextFlashes: Record<string, "up" | "down"> = {};
 
-      rates.forEach((rate) => {
+      displayRates.forEach((rate) => {
         const prev = prevRates[rate.symbol];
         if (!prev) return;
 
@@ -49,9 +104,9 @@ const CurrencyTicker = () => {
     }
 
     prevRatesRef.current = Object.fromEntries(
-      rates.map((rate) => [rate.symbol, { buy: rate.buy, sell: rate.sell }]),
+      displayRates.map((rate) => [rate.symbol, { buy: rate.buy, sell: rate.sell }]),
     );
-  }, [rates]);
+  }, [displayRates]);
 
   useEffect(() => {
     return () => {
@@ -70,7 +125,13 @@ const CurrencyTicker = () => {
   const formatRate = (symbol: string, value: number) => {
     const fxSymbols = ["USD", "EUR", "GBP", "USDT"];
     const metalSymbols = ["GAU", "G22", "QAU", "HAU", "TAU", "XAG"];
-    const fractionDigits = fxSymbols.includes(symbol) ? 3 : metalSymbols.includes(symbol) ? 2 : 1;
+    const fractionDigits = symbol === "EURUSD"
+      ? 4
+      : fxSymbols.includes(symbol)
+        ? 3
+        : metalSymbols.includes(symbol)
+          ? 2
+          : 1;
     return value.toLocaleString("tr-TR", {
       minimumFractionDigits: fractionDigits,
       maximumFractionDigits: fractionDigits,
@@ -81,7 +142,11 @@ const CurrencyTicker = () => {
     ? new Date(updatedAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
     : null;
 
-  const hasRates = rates.length > 0;
+  const hasRates = displayRates.length > 0;
+  const getDisplayName = (symbol: string, name: string) => {
+    if (symbol === "EURUSD") return "Eur/Usd";
+    return name;
+  };
 
   return (
     <>
@@ -93,7 +158,8 @@ const CurrencyTicker = () => {
           {isLoading && !hasRates ? "Yukleniyor" : error ? "Veri uyarisi" : "Canlı"}
         </span>
       </div>
-      <table className="w-full text-sm mb-6">
+      <div className="max-h-[430px] overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-400 [&::-webkit-scrollbar-thumb]:rounded-full mb-6">
+      <table className="w-full text-sm">
         <thead>
           <tr className="text-muted-foreground border-b">
             <th className="py-2 text-left">Ad</th>
@@ -110,12 +176,12 @@ const CurrencyTicker = () => {
               </td>
             </tr>
           )}
-          {hasRates && rates.map((rate, i) => (
+          {hasRates && displayRates.map((rate, i) => (
             <>
               <tr key={`${rate.symbol}-${i}`} className={
                 `border-b last:border-b-0`
               }>
-                <td className="py-2 font-semibold">{rate.name}</td>
+                <td className="py-2 font-semibold">{getDisplayName(rate.symbol, rate.name)}</td>
                 <td className={`py-2 text-right transition-colors duration-700 ${getFlashColorClass(`${rate.symbol}-buy`)}`}>
                   {formatRate(rate.symbol, rate.buy)}
                 </td>
@@ -129,7 +195,7 @@ const CurrencyTicker = () => {
                   </span>
                 </td>
               </tr>
-              {(i === 2 || i === 7) && (
+              {(rate.symbol === "GBP" || rate.symbol === "GREMSE_OLD") && (
                 <tr>
                   <td colSpan={4} className="p-0">
                     <div className="border-b-4 border-primary"></div>
@@ -140,6 +206,7 @@ const CurrencyTicker = () => {
           ))}
         </tbody>
       </table>
+      </div>
 
       {/* Önemli Haberler Tablosu */}
       <table className="w-full text-sm bg-muted rounded-lg">
