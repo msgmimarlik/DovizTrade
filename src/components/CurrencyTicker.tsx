@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { TrendingUp, TrendingDown } from "lucide-react";
 import useTickerData from "@/hooks/useTickerData";
 
 const CurrencyTicker = () => {
@@ -7,6 +6,10 @@ const CurrencyTicker = () => {
   const [flashByKey, setFlashByKey] = useState<Record<string, "up" | "down">>({});
   const prevRatesRef = useRef<Record<string, { buy: number; sell: number }> | null>(null);
   const flashTimersRef = useRef<Record<string, number>>({});
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const scrollHideTimerRef = useRef<number | null>(null);
+  const [hasOverflow, setHasOverflow] = useState(false);
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
 
   const displayRates = useMemo(() => {
     const bySymbol = new Map(rates.map((rate) => [rate.symbol, rate]));
@@ -113,8 +116,47 @@ const CurrencyTicker = () => {
       Object.values(flashTimersRef.current).forEach((timer) => {
         window.clearTimeout(timer);
       });
+
+      if (scrollHideTimerRef.current) {
+        window.clearTimeout(scrollHideTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const updateOverflowState = () => {
+      const overflow = container.scrollHeight > container.clientHeight + 1;
+      setHasOverflow(overflow);
+      if (!overflow) {
+        setIsUserScrolling(false);
+      }
+    };
+
+    updateOverflowState();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateOverflowState);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [displayRates]);
+
+  const handleScroll = () => {
+    if (!hasOverflow) return;
+
+    setIsUserScrolling(true);
+    if (scrollHideTimerRef.current) {
+      window.clearTimeout(scrollHideTimerRef.current);
+    }
+
+    scrollHideTimerRef.current = window.setTimeout(() => {
+      setIsUserScrolling(false);
+      scrollHideTimerRef.current = null;
+    }, 600);
+  };
 
   const getFlashColorClass = (key: string) => {
     if (flashByKey[key] === "up") return "text-green-500";
@@ -158,20 +200,23 @@ const CurrencyTicker = () => {
           {isLoading && !hasRates ? "Yukleniyor" : error ? "Veri uyarisi" : "Canlı"}
         </span>
       </div>
-      <div className="max-h-[430px] overflow-y-auto pr-1 mb-6">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className={`max-h-[430px] mb-6 ${hasOverflow ? "overflow-y-auto" : "overflow-y-hidden"} ${hasOverflow && isUserScrolling ? "pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/70" : "[&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-transparent"}`}
+      >
       <table className="w-full text-sm">
         <thead>
           <tr className="text-muted-foreground border-b">
             <th className="py-2 text-left">Ad</th>
             <th className="py-2 text-right">Alış</th>
             <th className="py-2 text-right">Satış</th>
-            <th className="py-2 text-right">Değişim</th>
           </tr>
         </thead>
         <tbody>
           {!hasRates && isLoading && (
             <tr>
-              <td colSpan={4} className="py-6 text-center text-muted-foreground">
+              <td colSpan={3} className="py-6 text-center text-muted-foreground">
                 Guncel kurlar yukleniyor...
               </td>
             </tr>
@@ -188,16 +233,10 @@ const CurrencyTicker = () => {
                 <td className={`py-2 text-right transition-colors duration-700 ${getFlashColorClass(`${rate.symbol}-sell`)}`}>
                   {formatRate(rate.symbol, rate.sell)}
                 </td>
-                <td className={`py-2 text-right font-medium ${rate.change >= 0 ? "text-green-600" : "text-red-600"}`}> 
-                  <span className="inline-flex items-center gap-1">
-                    {rate.change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    %{Math.abs(rate.change).toFixed(2)}
-                  </span>
-                </td>
               </tr>
               {(rate.symbol === "GBP" || rate.symbol === "GREMSE_OLD") && (
                 <tr>
-                  <td colSpan={4} className="p-0">
+                  <td colSpan={3} className="p-0">
                     <div className="border-b-4 border-primary"></div>
                   </td>
                 </tr>
