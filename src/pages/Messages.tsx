@@ -89,7 +89,15 @@ const Messages = () => {
         if (raw) {
           const u = JSON.parse(raw);
           if (u?.id) {
-            ws.send(JSON.stringify({ type: "user:online", userId: u.id, clientSessionId: getClientSessionId(u.id) }));
+            ws.send(JSON.stringify({
+              type: "user:online",
+              userId: u.id,
+              clientSessionId: getClientSessionId(u.id),
+              name: u.name || u.fullName || u.username || String(u.id),
+              officeName: u.officeName || null,
+              location: u.location || null,
+              role: u.role || "user",
+            }));
           }
         }
       } catch {

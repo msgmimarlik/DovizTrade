@@ -108,9 +108,11 @@ const scheduleDailyChatReset = () => {
 
   dailyResetTimer = setTimeout(() => {
     messages.splice(0, messages.length);
+    dailyTransactions = [];
     pruneChatArchive();
     persistChatArchive();
     broadcast({ type: "chat:reset", scope: "all", reason: "midnight-tr", dayKey: getTrDayKey() });
+    broadcast({ type: "transactions:daily:reset" });
     scheduleDailyChatReset();
   }, delayMs);
 };
@@ -124,6 +126,7 @@ const MAX_SESSIONS_PER_USER = 2;
 
 let standardListings = [];
 let arbitrageListings = [];
+let dailyTransactions = [];
 
 const wss = new WebSocketServer({ port: PORT });
 
@@ -219,6 +222,7 @@ const broadcastListingsSnapshot = () => {
     type: "listings:snapshot",
     standardListings: annotateListings(standardListings),
     arbitrageListings: annotateListings(arbitrageListings),
+    dailyTransactions,
   });
 };
 
@@ -230,30 +234,11 @@ const buildOnlineList = () => {
   const list = [];
 
   const pushUserRows = (userId, displayName, officeName, location, isOnline) => {
-    const slotMap = userSessionSlots.get(userId);
     const baseName = officeName || displayName || String(userId);
-
-    if (isOnline && slotMap && slotMap.size > 1) {
-      const orderedSlots = [...slotMap.values()].sort((a, b) => a - b);
-      orderedSlots.forEach((slotNumber) => {
-        const nameWithSlot = `${baseName} ${slotNumber}`;
-        list.push({
-          id: `${userId}:${slotNumber}`,
-          name: nameWithSlot,
-          avatar: nameWithSlot.split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
-          isOnline: true,
-          officeName: officeName || null,
-          location: location || null,
-        });
-      });
-      return;
-    }
-
-    const fallbackName = baseName;
     list.push({
       id: String(userId),
-      name: fallbackName,
-      avatar: fallbackName.split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
+      name: baseName,
+      avatar: baseName.split(" ").map((w) => w[0]).join("").substring(0, 2).toUpperCase(),
       isOnline,
       officeName: officeName || null,
       location: location || null,
@@ -412,15 +397,16 @@ wss.on("connection", (socket) => {
           connectedSockets.set(socket, userId);
           connectedClientSessions.set(socket, clientSessionId);
           clearInactiveListingTimeout(userId);
-          // Update profile info from authenticated frontend session.
+          // Merge profile: only overwrite fields that are explicitly provided in this message.
+          const existingProfile = connectedUserProfiles.get(userId) || {};
           connectedUserProfiles.set(userId, {
-            name: message.name || String(userId),
-            officeName: message.officeName || null,
-            location: message.location || null,
-            role: message.role || "user",
-            email: message.email || null,
-            phone: message.phone || null,
-            gsm: message.gsm || null,
+            name: message.name || existingProfile.name || String(userId),
+            officeName: message.officeName !== undefined ? message.officeName : existingProfile.officeName,
+            location: message.location !== undefined ? message.location : existingProfile.location,
+            role: message.role || existingProfile.role || "user",
+            email: message.email !== undefined ? message.email : existingProfile.email,
+            phone: message.phone !== undefined ? message.phone : existingProfile.phone,
+            gsm: message.gsm !== undefined ? message.gsm : existingProfile.gsm,
           });
           broadcastOnlineUsers();
           broadcastListingsSnapshot();
@@ -665,10 +651,23 @@ wss.on("connection", (socket) => {
         });
         pruneChatArchive();
         persistChatArchive();
-        connectedSockets.forEach((userId, sock) => {
-          if (String(userId) === String(toId) && sock.readyState === sock.OPEN) {
-            sock.send(JSON.stringify({ type: "chat:private", fromId: String(fromId), fromName, text, time }));
+
+        // Deliver only to the primary session (slot 1) of the target user.
+        const targetUserId = Number(String(toId).split(":")[0]);
+        const slotMap = userSessionSlots.get(targetUserId);
+        let primarySessionId = null;
+        if (slotMap) {
+          for (const [csId, slot] of slotMap.entries()) {
+            if (slot === 1) { primarySessionId = csId; break; }
           }
+        }
+        connectedSockets.forEach((userId, sock) => {
+          if (Number(userId) !== targetUserId || sock.readyState !== sock.OPEN) return;
+          // If there is a primary session, restrict to it; otherwise send to whoever is first connected.
+          if (primarySessionId !== null) {
+            if (connectedClientSessions.get(sock) !== primarySessionId) return;
+          }
+          sock.send(JSON.stringify({ type: "chat:private", fromId: String(fromId), fromName, text, time }));
         });
         return;
       }
@@ -687,7 +686,7 @@ wss.on("connection", (socket) => {
         const ownerProfile = ownerUserId ? findProfileByUserId(ownerUserId) : null;
         const listingType = transactionListing?.type === "buy" || transactionListing?.type === "sell"
           ? transactionListing.type
-          : null;
+          : transactionListing?.kind === "arbitrage" ? "buy" : null;
         const actorSideType = listingType === "sell" ? "buy" : listingType === "buy" ? "sell" : null;
         const ownerInfo = {
           name: ownerProfile?.name || transactionListing?.userName || message.ownerName || null,
@@ -789,6 +788,27 @@ wss.on("connection", (socket) => {
             actorInfo,
           });
         }
+        // Record this transaction for the daily log
+        const trTime = new Intl.DateTimeFormat("tr-TR", {
+          timeZone: "Europe/Istanbul",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date());
+        dailyTransactions.push({
+          id: Date.now() + Math.floor(Math.random() * 1000),
+          currency: transactionListing?.currency || null,
+          currencyFlag: transactionListing?.currencyFlag || null,
+          amount: Number(message.transactionAmount) || 0,
+          rate: transactionListing?.rate || null,
+          kind: transactionListing?.kind || "standard",
+          type: listingType,
+          ownerName: ownerInfo.name || message.ownerName || null,
+          actorName: actorInfo.name || message.actorName || null,
+          time: trTime,
+          occurredAt: Date.now(),
+        });
+        broadcast({ type: "transactions:daily:update", dailyTransactions });
+
         if (updated) {
           broadcastListingsSnapshot();
         }

@@ -1,4 +1,4 @@
-import { apiRequest, getClientSessionId } from "@/lib/network";
+import { apiRequest, getClientSessionId, normalizeUserSocketId, resolveWsUrl } from "@/lib/network";
 import CurrencyTicker from "@/components/CurrencyTicker";
 import Navbar from "@/components/Navbar";
 import CurrencyFilter from "@/components/CurrencyFilter";
@@ -21,7 +21,6 @@ import { type OnlineUser } from "@/data/mockUsers";
 import { useNavigate } from "react-router-dom";
 import { Check, Coins, DollarSign, Euro, PoundSterling, X } from "lucide-react";
 import { toast } from "sonner";
-import { resolveWsUrl } from "@/lib/network";
 
 const mockListings: any[] = [];
 const mockArbitrageListings: any[] = [];
@@ -31,8 +30,11 @@ const sortByCurrencyAndRate = <T extends { currency: string; rate: number }>(
   rateOrder: "asc" | "desc",
 ) => {
   const currencyOrder = ["USD", "EUR", "GBP", "USDT", "GAU"];
+  const normalizeCurrency = (currency: string) => (currency || "").toUpperCase().replace(/\s+/g, "");
+  const getBaseCurrency = (currency: string) => normalizeCurrency(currency).split("/")[0] || "";
+
   const getCurrencyPriority = (currency: string) => {
-    const index = currencyOrder.indexOf(currency.toUpperCase());
+    const index = currencyOrder.indexOf(getBaseCurrency(currency));
     return index === -1 ? Number.MAX_SAFE_INTEGER : index;
   };
 
@@ -42,10 +44,14 @@ const sortByCurrencyAndRate = <T extends { currency: string; rate: number }>(
 
     if (aPriority !== bPriority) return aPriority - bPriority;
 
-    const currencyCompare = a.currency.localeCompare(b.currency, "tr");
+    const aCurrency = normalizeCurrency(a.currency);
+    const bCurrency = normalizeCurrency(b.currency);
+    const currencyCompare = aCurrency.localeCompare(bCurrency, "tr");
     if (currencyCompare !== 0) return currencyCompare;
 
-    return rateOrder === "asc" ? a.rate - b.rate : b.rate - a.rate;
+    const aRate = Number(a.rate);
+    const bRate = Number(b.rate);
+    return rateOrder === "asc" ? aRate - bRate : bRate - aRate;
   });
 };
 
@@ -86,6 +92,8 @@ type TransactionModalState = {
   listingId: number;
   listingLabel?: string;
   transactionAmount?: number;
+  rate?: number | null;
+  currency?: string | null;
 };
 
 const INACTIVE_TIMEOUT_MS = 15 * 60 * 1000; // 15 dakika
@@ -184,8 +192,13 @@ const Index = () => {
   const [transactionAmount, setTransactionAmount] = useState<string>("");
   const [transactionModal, setTransactionModal] = useState<TransactionModalState | null>(null);
   const [transactionMessage, setTransactionMessage] = useState<string>("");
+  const [dailyTransactions, setDailyTransactions] = useState<any[]>([]);
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const listingsWsRef = useRef<WebSocket | null>(null);
   const currentUserRef = useRef<CurrentUser | null>(null);
+  const chatUserRef = useRef<OnlineUser | null>(null);
+
+  useEffect(() => { chatUserRef.current = chatUser; }, [chatUser]);
 
   useEffect(() => {
     currentUserRef.current = currentUser;
@@ -285,11 +298,14 @@ const Index = () => {
       try {
         const payload = JSON.parse(event.data) as
           | { type: "snapshot"; standardListings?: any[]; arbitrageListings?: any[] }
-          | { type: "listings:snapshot"; standardListings?: any[]; arbitrageListings?: any[] }
+          | { type: "listings:snapshot"; standardListings?: any[]; arbitrageListings?: any[]; dailyTransactions?: any[] }
           | { type: "listing:created"; listing: any }
           | { type: "listing:deleted"; id: number }
           | { type: "users:online"; users: OnlineUser[] }
           | { type: "user:online:rejected"; error?: string }
+          | { type: "transactions:daily:update"; dailyTransactions: any[] }
+          | { type: "transactions:daily:reset" }
+          | { type: "chat:private"; fromId: string; fromName?: string; text: string; time?: string }
           | TransactionStartedPayload;
 
         if (payload.type === "user:online:rejected") {
@@ -309,6 +325,27 @@ const Index = () => {
         if (payload.type === "listings:snapshot") {
           if (payload.standardListings) setStandardListings(payload.standardListings);
           if (payload.arbitrageListings) setArbitrageListings(payload.arbitrageListings);
+          if (payload.dailyTransactions) setDailyTransactions(payload.dailyTransactions);
+        }
+
+        if (payload.type === "transactions:daily:update") {
+          setDailyTransactions(payload.dailyTransactions);
+        }
+
+        if (payload.type === "transactions:daily:reset") {
+          setDailyTransactions([]);
+        }
+
+        if (payload.type === "chat:private") {
+          const fromId = normalizeUserSocketId(payload.fromId);
+          const openChatId = chatUserRef.current ? normalizeUserSocketId(chatUserRef.current.id) : null;
+          if (openChatId !== fromId) {
+            setUnreadCounts((prev) => ({ ...prev, [fromId]: (prev[fromId] || 0) + 1 }));
+            toast.message(payload.fromName || "Bir kullanıcı", {
+              description: payload.text,
+              duration: 5000,
+            });
+          }
         }
 
         if (payload.type === "listing:created") {
@@ -335,9 +372,9 @@ const Index = () => {
 
           // New target-based payload (opens for both owner and actor)
           if (payload.targetUserId && Number(payload.targetUserId) === Number(activeUser.id)) {
-            if (payload.transactionType && payload.currency && payload.transactionAmount) {
+            if (payload.currency && payload.transactionAmount) {
               appendUserTransaction(activeUser.id, {
-                type: payload.transactionType,
+                type: (payload.transactionType as "buy" | "sell") || "buy",
                 currency: payload.currency,
                 currencyFlag: payload.currencyFlag || "",
                 amount: Number(payload.transactionAmount),
@@ -358,6 +395,8 @@ const Index = () => {
               listingId: payload.listingId,
               listingLabel: payload.listingLabel,
               transactionAmount: payload.transactionAmount,
+              rate: payload.rate ?? null,
+              currency: payload.currency ?? null,
             });
             return;
           }
@@ -371,6 +410,8 @@ const Index = () => {
               listingId: payload.listingId,
               listingLabel: payload.listingLabel,
               transactionAmount: payload.transactionAmount,
+              rate: payload.rate ?? null,
+              currency: payload.currency ?? null,
             });
           }
         }
@@ -555,7 +596,7 @@ const Index = () => {
                       <tr key={listing.id} className="border-b bg-green-100 dark:bg-[#233a2c] transition-colors">
                         <td className="px-2 py-1 border">{renderCurrencyCell(listing.currency)}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
-                        <td className="px-2 py-1 border">{listing.rate} ₺</td>
+                        <td className="px-2 py-1 border">{listing.rate}</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
@@ -611,7 +652,7 @@ const Index = () => {
                       <tr key={listing.id} className="border-b bg-red-100 dark:bg-[#8B0000] transition-colors">
                         <td className="px-2 py-1 border">{renderCurrencyCell(listing.currency)}</td>
                         <td className="px-2 py-1 border">{listing.amount}</td>
-                        <td className="px-2 py-1 border">{listing.rate} ₺</td>
+                        <td className="px-2 py-1 border">{listing.rate}</td>
                         <td className="px-2 py-1 border">{listing.isBankTransfer ? "Bankadan" : "Elden"}</td>
                           <td className="px-2 py-1 border">
                             <span className="flex items-center gap-1.5">
@@ -710,7 +751,50 @@ const Index = () => {
             <aside className="w-full lg:w-80 xl:w-96 flex-shrink-0 space-y-4">
               <div className="lg:sticky lg:top-20 space-y-4">
                 <GeneralChat />
-                <OnlineUsersPanel users={onlineUsers} onUserClick={setChatUser} />
+                <OnlineUsersPanel
+                  users={onlineUsers.map((u) => ({
+                    ...u,
+                    unreadCount: unreadCounts[normalizeUserSocketId(u.id)] || 0,
+                    hasConversation: u.hasConversation || !!(unreadCounts[normalizeUserSocketId(u.id)]),
+                  }))}
+                  onUserClick={(u) => {
+                    setChatUser(u);
+                    setUnreadCounts((prev) => {
+                      const next = { ...prev };
+                      delete next[normalizeUserSocketId(u.id)];
+                      return next;
+                    });
+                  }}
+                />
+
+                {/* Günlük İşlem Akışı */}
+                <div className="rounded-xl bg-card border border-border shadow p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-bold text-sm text-foreground">Bugünkü İşlemler</h3>
+                    <span className="text-xs text-muted-foreground">{dailyTransactions.length} işlem</span>
+                  </div>
+                  {dailyTransactions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-4">Henüz işlem yapılmadı.</p>
+                  ) : (
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                      {[...dailyTransactions].sort((a, b) => b.occurredAt - a.occurredAt).map((tx) => (
+                        <div key={tx.id} className="flex items-center gap-2 py-1.5 border-b border-border/50 last:border-0 text-xs">
+                          <span className="text-muted-foreground w-10 shrink-0">{tx.time}</span>
+                          <span className="text-base shrink-0">{tx.currencyFlag || "💱"}</span>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-semibold text-foreground">{tx.currency}</span>
+                            {tx.amount > 0 && (
+                              <span className="text-muted-foreground"> · {Number(tx.amount).toLocaleString("tr-TR")}</span>
+                            )}
+                            {tx.rate != null && (
+                              <span className="text-muted-foreground"> @ {Number(tx.rate).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </aside>
           )}
@@ -757,6 +841,9 @@ const Index = () => {
                   <p>
                     <strong>Kur:</strong>{" "}
                     {(() => {
+                      if (transactionModal.rate != null && transactionModal.currency) {
+                        return `${transactionModal.currency} - ${Number(transactionModal.rate).toLocaleString("tr-TR", { minimumFractionDigits: 2 })}`;
+                      }
                       const rawLabel = String(transactionModal.listingLabel || "");
                       const [leftPart, ratePart] = rawLabel.split("@").map((part) => part.trim());
                       const currency = (leftPart || "").split(" ")[0] || "-";

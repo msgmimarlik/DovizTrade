@@ -79,7 +79,7 @@ const TransactionHistory = () => {
               {/* Rate */}
               <div className="text-sm text-foreground">
                 <span className="sm:hidden text-muted-foreground text-xs mr-1">Kur:</span>
-                ₺{tx.rate.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
+                {tx.rate.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
               </div>
 
               {/* Parties */}

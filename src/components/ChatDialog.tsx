@@ -116,7 +116,12 @@ const ChatDialog = ({ user, onClose }: ChatDialogProps) => {
       wsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "user:online", userId: Number(myId), clientSessionId: getClientSessionId(myId) }));
+        ws.send(JSON.stringify({
+          type: "user:online",
+          userId: Number(myId),
+          clientSessionId: getClientSessionId(myId),
+          name: currentUser?.name || String(myId),
+        }));
         clearHeartbeat();
         heartbeatTimer = window.setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
