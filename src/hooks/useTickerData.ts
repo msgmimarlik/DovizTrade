@@ -112,6 +112,18 @@ const appendEurUsdParity = (rates: CurrencyRate[]) => {
 	];
 };
 
+const isCurrentTickerPayload = (body: TickerApiResponse) => {
+	if (!Array.isArray(body.rates) || body.rates.length === 0) return false;
+
+	const symbols = new Set(body.rates.map((rate) => rate.symbol));
+	const hasRequiredSymbols = symbols.has("USD") && symbols.has("EUR") && symbols.has("GBP") && symbols.has("EURUSD");
+	if (!hasRequiredSymbols) return false;
+
+	if (body.source === "yahoo" || body.upstreamSource === "yahoo") return false;
+
+	return true;
+};
+
 const normalizeDirectTickerPayload = (payload: Record<string, unknown>): TickerApiResponse => {
 	const source = payload && typeof payload === "object" ? payload : {};
 
@@ -210,7 +222,7 @@ const useTickerData = () => {
 				const rawText = await response.text();
 				body = rawText ? (JSON.parse(rawText) as TickerApiResponse) : {};
 
-				if (!response.ok || !Array.isArray(body.rates) || body.rates.length === 0) {
+				if (!response.ok || !isCurrentTickerPayload(body)) {
 					throw new Error(`Backend ticker unavailable (${response.status})`);
 				}
 			} catch {
@@ -260,7 +272,7 @@ const useTickerData = () => {
 		void load();
 		const timer = window.setInterval(() => {
 			void load();
-		}, 10000);
+		}, 5000);
 		return () => {
 			window.clearInterval(timer);
 		};
