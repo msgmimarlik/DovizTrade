@@ -113,7 +113,6 @@ const useNewsData = () => {
     let isCancelled = false;
     let retryTimer: number | null = null;
     let refreshTimer: number | null = null;
-    let streamReconnectTimer: number | null = null;
     let stream: EventSource | null = null;
 
     const scheduleRetry = (delayMs: number) => {
@@ -246,15 +245,8 @@ const useNewsData = () => {
       });
 
       stream.onerror = () => {
-        stream?.close();
-        stream = null;
-
-        if (!isCancelled) {
-          if (streamReconnectTimer !== null) {
-            window.clearTimeout(streamReconnectTimer);
-          }
-          streamReconnectTimer = window.setTimeout(connectStream, 5000);
-        }
+        // EventSource performs automatic reconnects; avoid manual reconnect loops.
+        if (!isCancelled) setError(null);
       };
     };
 
@@ -272,9 +264,6 @@ const useNewsData = () => {
       }
       if (refreshTimer !== null) {
         window.clearInterval(refreshTimer);
-      }
-      if (streamReconnectTimer !== null) {
-        window.clearTimeout(streamReconnectTimer);
       }
       if (stream) {
         stream.close();
