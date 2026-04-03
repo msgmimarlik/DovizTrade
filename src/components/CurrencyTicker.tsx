@@ -1,15 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import useTickerData from "@/hooks/useTickerData";
+import useNewsData from "@/hooks/useNewsData";
 
 const CurrencyTicker = () => {
   const { rates, updatedAt, error, isLoading } = useTickerData();
   const [flashByKey, setFlashByKey] = useState<Record<string, "up" | "down">>({});
+  const [highlightedNewsByKey, setHighlightedNewsByKey] = useState<Record<string, boolean>>({});
   const prevRatesRef = useRef<Record<string, { buy: number; sell: number }> | null>(null);
   const flashTimersRef = useRef<Record<string, number>>({});
+  const seenNewsRef = useRef<Set<string>>(new Set());
+  const newsHighlightTimersRef = useRef<Record<string, number>>({});
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollHideTimerRef = useRef<number | null>(null);
+  const newsScrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const newsScrollHideTimerRef = useRef<number | null>(null);
   const [hasOverflow, setHasOverflow] = useState(false);
   const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const [newsHasOverflow, setNewsHasOverflow] = useState(false);
+  const [isNewsUserScrolling, setIsNewsUserScrolling] = useState(false);
+  const [nowTick, setNowTick] = useState<number>(Date.now());
+  const { news, loading: newsLoading, error: newsError } = useNewsData();
 
   const displayRates = useMemo(() => {
     const bySymbol = new Map(rates.map((rate) => [rate.symbol, rate]));
@@ -112,13 +122,27 @@ const CurrencyTicker = () => {
   }, [displayRates]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowTick(Date.now());
+    }, 30_000);
+
     return () => {
+      window.clearInterval(timer);
+
       Object.values(flashTimersRef.current).forEach((timer) => {
+        window.clearTimeout(timer);
+      });
+
+      Object.values(newsHighlightTimersRef.current).forEach((timer) => {
         window.clearTimeout(timer);
       });
 
       if (scrollHideTimerRef.current) {
         window.clearTimeout(scrollHideTimerRef.current);
+      }
+
+      if (newsScrollHideTimerRef.current) {
+        window.clearTimeout(newsScrollHideTimerRef.current);
       }
     };
   }, []);
@@ -144,6 +168,27 @@ const CurrencyTicker = () => {
     return () => observer.disconnect();
   }, [displayRates]);
 
+  useEffect(() => {
+    const container = newsScrollContainerRef.current;
+    if (!container) return;
+
+    const updateOverflowState = () => {
+      const overflow = container.scrollHeight > container.clientHeight + 1;
+      setNewsHasOverflow(overflow);
+      if (!overflow) {
+        setIsNewsUserScrolling(false);
+      }
+    };
+
+    updateOverflowState();
+
+    if (typeof ResizeObserver === "undefined") return;
+
+    const observer = new ResizeObserver(updateOverflowState);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [news]);
+
   const handleScroll = () => {
     if (!hasOverflow) return;
 
@@ -155,6 +200,20 @@ const CurrencyTicker = () => {
     scrollHideTimerRef.current = window.setTimeout(() => {
       setIsUserScrolling(false);
       scrollHideTimerRef.current = null;
+    }, 600);
+  };
+
+  const handleNewsScroll = () => {
+    if (!newsHasOverflow) return;
+
+    setIsNewsUserScrolling(true);
+    if (newsScrollHideTimerRef.current) {
+      window.clearTimeout(newsScrollHideTimerRef.current);
+    }
+
+    newsScrollHideTimerRef.current = window.setTimeout(() => {
+      setIsNewsUserScrolling(false);
+      newsScrollHideTimerRef.current = null;
     }, 600);
   };
 
@@ -190,6 +249,92 @@ const CurrencyTicker = () => {
     return name;
   };
 
+  const getNewsKey = (item: { title: string; link?: string; date?: string }, index?: number) =>
+    `${item.link || "nolink"}|${item.title}|${item.date || "nodate"}|${index ?? ""}`;
+
+  useEffect(() => {
+    if (!news || news.length === 0) return;
+
+    const currentKeys = news.map((item, index) => getNewsKey(item, index));
+
+    // On first load, do not flash all existing rows as new.
+    if (seenNewsRef.current.size === 0) {
+      seenNewsRef.current = new Set(currentKeys);
+      return;
+    }
+
+    const newKeys = currentKeys.filter((key) => !seenNewsRef.current.has(key));
+    if (newKeys.length === 0) {
+      seenNewsRef.current = new Set(currentKeys);
+      return;
+    }
+
+    setHighlightedNewsByKey((current) => {
+      const next = { ...current };
+      newKeys.forEach((key) => {
+        next[key] = true;
+      });
+      return next;
+    });
+
+    newKeys.forEach((key) => {
+      const existingTimer = newsHighlightTimersRef.current[key];
+      if (existingTimer) {
+        window.clearTimeout(existingTimer);
+      }
+
+      newsHighlightTimersRef.current[key] = window.setTimeout(() => {
+        setHighlightedNewsByKey((current) => {
+          if (!current[key]) return current;
+          const updated = { ...current };
+          delete updated[key];
+          return updated;
+        });
+        delete newsHighlightTimersRef.current[key];
+      }, 3500);
+    });
+
+    seenNewsRef.current = new Set(currentKeys);
+  }, [news]);
+
+  const formatNewsTime = (value?: string) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+
+    const diffMs = nowTick - date.getTime();
+    if (diffMs < 0) {
+      // Handle small clock drifts between client and source timestamps.
+      if (Math.abs(diffMs) <= 5 * 60 * 1000) return "az once";
+      const minsAhead = Math.ceil(Math.abs(diffMs) / 60000);
+      return `${minsAhead} dk sonra`;
+    }
+
+    const diffMin = Math.floor(diffMs / 60000);
+
+    if (diffMin < 1) return "az once";
+    if (diffMin < 60) return `${diffMin} dk once`;
+
+    const diffHour = Math.floor(diffMin / 60);
+    if (diffHour < 24) return `${diffHour} sa once`;
+
+    return date.toLocaleDateString("tr-TR", { timeZone: "Europe/Istanbul" });
+  };
+
+  const formatNewsAbsoluteTime = (value?: string) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+
+    return date.toLocaleString("tr-TR", {
+      timeZone: "Europe/Istanbul",
+      day: "2-digit",
+      month: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <>
       <div className="flex items-center justify-between mb-2">
@@ -222,15 +367,15 @@ const CurrencyTicker = () => {
             </tr>
           )}
           {hasRates && displayRates.map((rate, i) => (
-            <>
-              <tr key={`${rate.symbol}-${i}`} className={
+            <Fragment key={`${rate.symbol}-${i}`}>
+              <tr className={
                 `border-b last:border-b-0`
               }>
                 <td className="py-2 font-semibold">{getDisplayName(rate.symbol, rate.name)}</td>
-                <td className={`py-2 text-right transition-colors duration-700 ${getFlashColorClass(`${rate.symbol}-buy`)}`}>
+                <td className={`py-2 text-right transition-colors duration-700 ${getFlashColorClass(`${rate.symbol}-buy`)}`}> 
                   {formatRate(rate.symbol, rate.buy)}
                 </td>
-                <td className={`py-2 text-right transition-colors duration-700 ${getFlashColorClass(`${rate.symbol}-sell`)}`}>
+                <td className={`py-2 text-right transition-colors duration-700 ${getFlashColorClass(`${rate.symbol}-sell`)}`}> 
                   {formatRate(rate.symbol, rate.sell)}
                 </td>
               </tr>
@@ -241,39 +386,69 @@ const CurrencyTicker = () => {
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           ))}
         </tbody>
       </table>
       </div>
 
-      {/* Önemli Haberler Tablosu */}
-      <table className="w-full text-sm bg-muted rounded-lg">
-        <thead>
-          <tr className="text-muted-foreground border-b">
-            <th className="py-2 px-3 text-left">Önemli Haberler</th>
-            <th className="py-2 px-3 text-right">Tarih</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr className="border-b">
-            <td className="py-2 px-3 font-medium">TCMB faiz kararı açıklandı: Politika faizi %50'de sabit tutuldu.</td>
-            <td className="py-2 px-3 text-right">25.03.2026</td>
-          </tr>
-          <tr className="border-b">
-            <td className="py-2 px-3 font-medium">ABD'de enflasyon beklentilerin üzerinde geldi.</td>
-            <td className="py-2 px-3 text-right">24.03.2026</td>
-          </tr>
-          <tr className="border-b">
-            <td className="py-2 px-3 font-medium">Altın fiyatları rekor seviyeye yükseldi.</td>
-            <td className="py-2 px-3 text-right">23.03.2026</td>
-          </tr>
-          <tr>
-            <td className="py-2 px-3 font-medium">FED Başkanı'nın açıklamaları piyasada dalgalanma yarattı.</td>
-            <td className="py-2 px-3 text-right">22.03.2026</td>
-          </tr>
-        </tbody>
-      </table>
+
+      <section className="w-full mt-4 rounded-lg border border-border bg-muted/50 p-3">
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-sm font-semibold">Guncel Haber Akisi</h4>
+          <span className="text-[11px] text-muted-foreground">
+            {newsLoading ? "yenileniyor" : "canli akıs"}
+          </span>
+        </div>
+
+        <div
+          ref={newsScrollContainerRef}
+          onScroll={handleNewsScroll}
+          className={`max-h-44 space-y-2 ${newsHasOverflow ? "overflow-y-auto" : "overflow-y-hidden"} ${newsHasOverflow && isNewsUserScrolling ? "pr-1 [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/70" : "[&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-transparent"}`}
+        >
+          {newsError && (
+            <p className="text-xs text-red-500">{newsError}</p>
+          )}
+
+          {!newsLoading && news.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-4">Haber bulunamadı.</p>
+          )}
+
+          {news.map((item, i) => {
+            const rowKey = getNewsKey(item, i);
+            const isNewlyArrived = Boolean(highlightedNewsByKey[rowKey]);
+
+            return (
+            <article
+              key={rowKey}
+              className={`rounded-md border border-border/70 bg-background/70 p-2 transition-colors ${isNewlyArrived ? "bg-primary/15 ring-1 ring-primary/60 animate-pulse" : ""}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  {item.link ? (
+                    <a
+                      href={item.link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm font-medium leading-snug text-foreground hover:text-primary hover:underline line-clamp-2"
+                    >
+                      {item.title}
+                    </a>
+                  ) : (
+                    <p className="text-sm font-medium leading-snug text-foreground line-clamp-2">{item.title}</p>
+                  )}
+                </div>
+                <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
+                  <span title={`TR saati: ${formatNewsAbsoluteTime(item.date)}`}>
+                    {formatNewsTime(item.date)}
+                  </span>
+                </span>
+              </div>
+            </article>
+            );
+          })}
+        </div>
+      </section>
 
       {/* İkinci piyasa verisi tablosu kaldırıldı */}
     </>

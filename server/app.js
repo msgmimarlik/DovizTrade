@@ -8,6 +8,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import http from 'http';
 import https from 'https';
+import Parser from 'rss-parser';
 import { fileURLToPath } from 'url';
 
 const app = express();
@@ -42,6 +43,75 @@ const query = async (sql, params = []) => {
 
 const MARKET_TICKER_CACHE_MS = 0;
 const ERCIL_TICKER_URL = 'https://ercilsarrafiye.com/panel/kurguncelle.php';
+const MARKET_NEWS_CACHE_MS = 5 * 60 * 1000;
+const MARKET_NEWS_LIMIT = 8;
+const MARKET_NEWS_STREAM_POLL_MS = 15 * 1000;
+const MARKET_NEWS_TZ = 'Europe/Istanbul';
+const MARKET_NEWS_FEEDS = [
+  'https://news.google.com/rss/search?q=doviz+OR+altin+OR+faiz+OR+enflasyon+OR+tcmb+OR+fed+OR+petrol+OR+borsa&hl=tr&gl=TR&ceid=TR:tr',
+  'https://www.aa.com.tr/tr/rss/default?cat=ekonomi',
+  'https://www.trthaber.com/sondakika_articles.rss',
+];
+
+const MARKET_NEWS_STRONG_KEYWORDS = [
+  'tcmb',
+  'merkez bankasi',
+  'faiz',
+  'enflasyon',
+  'doviz',
+  'kur',
+  'usd',
+  'dolar',
+  'euro',
+  'sterlin',
+  'altin',
+  'ons',
+  'gram altin',
+  'petrol',
+  'brent',
+  'borsa',
+  'bist',
+  'fed',
+  'ecb',
+  'swap',
+  'cari acik',
+  'rezerv',
+];
+
+const MARKET_NEWS_SUPPORTING_KEYWORDS = [
+  'buyume',
+  'issizlik',
+  'ihracat',
+  'ithalat',
+  'sanayi uretimi',
+  'pmi',
+  'tufe',
+  'ufe',
+  'gsyh',
+  'hazine',
+  'tahvil',
+  'veri aciklandi',
+  'son dakika ekonomi',
+];
+
+const MARKET_NEWS_EXCLUDE_KEYWORDS = [
+  'futbol',
+  'transfer',
+  'magazin',
+  'dizi',
+  'film',
+  'oyuncu',
+  'survivor',
+  'hava durumu',
+  'deprem',
+  'kaza',
+  'cinayet',
+  'spor',
+  'galatasaray',
+  'fenerbahce',
+  'besiktas',
+  'trabzonspor',
+];
 
 const DEFAULT_MARKET_RATES = [
   { name: 'Dolar', symbol: 'USD', buy: 38.42, sell: 38.55, change: 0.35 },
@@ -58,6 +128,297 @@ const DEFAULT_MARKET_RATES = [
 let marketTickerCache = {
   payload: null,
   fetchedAt: 0,
+};
+
+let marketNewsCache = {
+  payload: null,
+  fetchedAt: 0,
+  dayKey: null,
+};
+
+const marketNewsSubscribers = new Set();
+
+const rssParser = new Parser({ timeout: 8000 });
+
+const getTrDateParts = (dateValue = new Date()) => {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: MARKET_NEWS_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const parts = formatter.formatToParts(dateValue);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  return {
+    year,
+    month,
+    day,
+  };
+};
+
+const getTrDayKey = (dateValue = new Date()) => {
+  const { year, month, day } = getTrDateParts(dateValue);
+  if (!year || !month || !day) return null;
+  return `${year}-${month}-${day}`;
+};
+
+const isSameTrDay = (value, referenceDate = new Date()) => {
+  if (!value) return false;
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+
+  const refDay = getTrDayKey(referenceDate);
+  const targetDay = getTrDayKey(parsed);
+  return Boolean(refDay && targetDay && refDay === targetDay);
+};
+
+const parseNewsDateToIso = (value) => {
+  if (!value) return null;
+
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  const directDate = new Date(raw);
+  if (!Number.isNaN(directDate.getTime())) {
+    return directDate.toISOString();
+  }
+
+  const compact = raw.replace(/\s+/g, ' ');
+
+  // Example: 2026-04-03 14:25:00 (no timezone in source)
+  const ymdMatch = compact.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (ymdMatch) {
+    const [, year, month, day, hour, minute, second = '00'] = ymdMatch;
+    const tzDate = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}+03:00`);
+    if (!Number.isNaN(tzDate.getTime())) {
+      return tzDate.toISOString();
+    }
+  }
+
+  // Example: 03.04.2026 14:25:00 (TR style, no timezone in source)
+  const dmyMatch = compact.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (dmyMatch) {
+    const [, day, month, year, hour, minute, second = '00'] = dmyMatch;
+    const dd = day.padStart(2, '0');
+    const mm = month.padStart(2, '0');
+    const tzDate = new Date(`${year}-${mm}-${dd}T${hour}:${minute}:${second}+03:00`);
+    if (!Number.isNaN(tzDate.getTime())) {
+      return tzDate.toISOString();
+    }
+  }
+
+  return null;
+};
+
+const normalizeNewsItem = (item) => {
+  const title = String(item?.title || '').trim();
+  if (!title) return null;
+
+  const link = String(item?.link || '').trim() || null;
+  const rawDate = item?.isoDate || item?.pubDate || item?.published || null;
+  const date = parseNewsDateToIso(rawDate);
+
+  return {
+    title,
+    link,
+    date,
+  };
+};
+
+const normalizeNewsText = (value) => String(value || '')
+  .toLocaleLowerCase('tr-TR')
+  .normalize('NFKD')
+  .replace(/[\u0300-\u036f]/g, '');
+
+const computeMarketImpactScore = (title) => {
+  const text = normalizeNewsText(title);
+  if (!text) return 0;
+
+  if (MARKET_NEWS_EXCLUDE_KEYWORDS.some((keyword) => text.includes(keyword))) {
+    return 0;
+  }
+
+  let score = 0;
+
+  MARKET_NEWS_STRONG_KEYWORDS.forEach((keyword) => {
+    if (text.includes(keyword)) score += 3;
+  });
+
+  MARKET_NEWS_SUPPORTING_KEYWORDS.forEach((keyword) => {
+    if (text.includes(keyword)) score += 1;
+  });
+
+  if (/\b%\s*\d|\d+\s*(baz puan|bp)\b/.test(text)) {
+    score += 1;
+  }
+
+  return score;
+};
+
+const dedupeNewsByTitle = (items) => {
+  const seen = new Set();
+  const output = [];
+
+  items.forEach((item) => {
+    const normalized = normalizeNewsText(item.title)
+      .replace(/\s*-\s*[^-]+$/, '')
+      .trim();
+
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    output.push(item);
+  });
+
+  return output;
+};
+
+const getNewsIdentity = (item) => [item?.link || '', item?.title || '', item?.date || ''].join('|');
+
+const sortNewsByDateDesc = (items) => [...items].sort((a, b) => {
+  const aTime = a?.date ? new Date(a.date).getTime() : 0;
+  const bTime = b?.date ? new Date(b.date).getTime() : 0;
+  return bTime - aTime;
+});
+
+const publishNewsEvent = (eventName, payload) => {
+  const body = `event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`;
+  for (const subscriber of marketNewsSubscribers) {
+    try {
+      subscriber.write(body);
+    } catch {
+      marketNewsSubscribers.delete(subscriber);
+    }
+  }
+};
+
+const loadMarketNews = async () => {
+  const now = new Date();
+  const todayKey = getTrDayKey(now);
+  const failures = [];
+  const allItems = [];
+
+  for (const feedUrl of MARKET_NEWS_FEEDS) {
+    try {
+      const feed = await rssParser.parseURL(feedUrl);
+      const items = Array.isArray(feed?.items) ? feed.items : [];
+      allItems.push(...items.map(normalizeNewsItem).filter(Boolean));
+    } catch (error) {
+      failures.push(`${feedUrl}:${error instanceof Error ? error.message : 'unknown-error'}`);
+    }
+  }
+
+  const scored = allItems
+    .map((item) => ({
+      ...item,
+      impactScore: computeMarketImpactScore(item.title),
+    }))
+    .filter((item) => item.impactScore >= 3)
+    .filter((item) => isSameTrDay(item.date, now))
+    .sort((a, b) => {
+      const aTime = a.date ? new Date(a.date).getTime() : 0;
+      const bTime = b.date ? new Date(b.date).getTime() : 0;
+      if (bTime !== aTime) return bTime - aTime;
+
+      // Keep importance as secondary ordering only when timestamps are equal.
+      return b.impactScore - a.impactScore;
+    });
+
+  const news = dedupeNewsByTitle(scored)
+    .map(({ impactScore, ...item }) => item)
+    .slice(0, MARKET_NEWS_LIMIT);
+
+  if (news.length > 0) {
+    return {
+      news,
+      source: 'multi-feed',
+      updatedAt: new Date().toISOString(),
+      dayKey: todayKey,
+      timezone: MARKET_NEWS_TZ,
+    };
+  }
+
+  throw new Error(failures.join(' | ') || 'no-important-news-for-today');
+};
+
+const refreshMarketNewsCache = async ({ broadcast = false } = {}) => {
+  const currentDayKey = getTrDayKey(new Date());
+
+  if (marketNewsCache.dayKey && currentDayKey && marketNewsCache.dayKey !== currentDayKey) {
+    marketNewsCache = {
+      payload: {
+        news: [],
+        source: 'daily-reset',
+        updatedAt: new Date().toISOString(),
+        dayKey: currentDayKey,
+        timezone: MARKET_NEWS_TZ,
+      },
+      fetchedAt: Date.now(),
+      dayKey: currentDayKey,
+    };
+
+    if (broadcast) {
+      publishNewsEvent('news:reset', {
+        type: 'news:reset',
+        dayKey: currentDayKey,
+        timezone: MARKET_NEWS_TZ,
+      });
+      publishNewsEvent('news:snapshot', {
+        type: 'news:snapshot',
+        news: [],
+        updatedAt: new Date().toISOString(),
+        dayKey: currentDayKey,
+        timezone: MARKET_NEWS_TZ,
+      });
+    }
+  }
+
+  const payload = await loadMarketNews();
+  const previousDayKey = marketNewsCache.dayKey;
+  const previousNews = Array.isArray(marketNewsCache.payload?.news) ? marketNewsCache.payload.news : [];
+  const previousIds = new Set(previousNews.map(getNewsIdentity));
+
+  marketNewsCache = {
+    payload,
+    fetchedAt: Date.now(),
+    dayKey: payload.dayKey || getTrDayKey(new Date()),
+  };
+
+  if (broadcast) {
+    if (previousDayKey && payload.dayKey && previousDayKey !== payload.dayKey) {
+      publishNewsEvent('news:reset', {
+        type: 'news:reset',
+        dayKey: payload.dayKey,
+        timezone: MARKET_NEWS_TZ,
+      });
+
+      publishNewsEvent('news:snapshot', {
+        type: 'news:snapshot',
+        news: payload.news,
+        updatedAt: payload.updatedAt,
+        dayKey: payload.dayKey,
+        timezone: MARKET_NEWS_TZ,
+      });
+
+      return payload;
+    }
+
+    const newItems = sortNewsByDateDesc(payload.news.filter((item) => !previousIds.has(getNewsIdentity(item))));
+    newItems.forEach((item) => {
+      publishNewsEvent('news:new', {
+        type: 'news:new',
+        item,
+        updatedAt: payload.updatedAt,
+        dayKey: payload.dayKey,
+        timezone: MARKET_NEWS_TZ,
+      });
+    });
+  }
+
+  return payload;
 };
 
 const parseTrNumber = (value) => {
@@ -1209,6 +1570,83 @@ app.get('/api/market/ticker', async (_req, res) => {
     });
   }
 });
+
+app.get('/api/market/news', async (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+
+  const now = Date.now();
+  const currentDayKey = getTrDayKey(new Date());
+  const hasFreshCache =
+    marketNewsCache.payload
+    && marketNewsCache.dayKey === currentDayKey
+    && now - marketNewsCache.fetchedAt < MARKET_NEWS_CACHE_MS;
+  if (hasFreshCache) {
+    return res.status(200).json({
+      ...marketNewsCache.payload,
+      cached: true,
+    });
+  }
+
+  try {
+    const payload = await refreshMarketNewsCache({ broadcast: false });
+
+    return res.status(200).json({
+      ...payload,
+      cached: false,
+    });
+  } catch (error) {
+    const fallback = marketNewsCache.payload || {
+      news: [],
+      source: 'fallback',
+      updatedAt: new Date().toISOString(),
+      dayKey: currentDayKey,
+      timezone: MARKET_NEWS_TZ,
+    };
+
+    return res.status(200).json({
+      ...fallback,
+      cached: Boolean(marketNewsCache.payload),
+      stale: true,
+      warning: error instanceof Error ? error.message : 'news-fallback',
+    });
+  }
+});
+
+app.get('/api/market/news/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
+
+  res.write(`event: ready\ndata: ${JSON.stringify({ type: 'ready', connectedAt: new Date().toISOString(), dayKey: getTrDayKey(new Date()), timezone: MARKET_NEWS_TZ })}\n\n`);
+
+  if (Array.isArray(marketNewsCache.payload?.news) && marketNewsCache.payload.news.length > 0) {
+    res.write(`event: news:snapshot\ndata: ${JSON.stringify({ type: 'news:snapshot', news: marketNewsCache.payload.news, updatedAt: marketNewsCache.payload.updatedAt })}\n\n`);
+  }
+
+  marketNewsSubscribers.add(res);
+
+  const keepAliveTimer = setInterval(() => {
+    res.write(': ping\n\n');
+  }, 25000);
+
+  req.on('close', () => {
+    clearInterval(keepAliveTimer);
+    marketNewsSubscribers.delete(res);
+  });
+});
+
+setInterval(() => {
+  refreshMarketNewsCache({ broadcast: true }).catch(() => {
+    // keep background refresh resilient
+  });
+}, MARKET_NEWS_STREAM_POLL_MS);
 
 const PORT = Number(process.env.PORT ?? 3001);
 app.listen(PORT, () => {
